@@ -394,3 +394,25 @@ Webカメラ映像から推定するため、明るい環境、正面に近い�
 ```powershell
 git push origin codex/public-release:main
 ```
+
+### 非公開データのバックアップ
+
+`.gitignore` で除外したファイルは、この公開リポジトリには保存されません。計測記録や発表資料もGitHubにバックアップする場合は、別の **Private（非公開）リポジトリ** を使用します。Privateリポジトリは、自分とアクセスを許可した人が閲覧できます。公開リポジトリ内の一部のフォルダーやブランチだけを非公開にすることはできません。
+
+| 保存先 | 保存する内容 |
+| --- | --- |
+| この公開リポジトリ | ソースコード、テスト、実行に必要なライブラリ・モデル資産 |
+| 別のPrivateリポジトリ | `recordings/`、`outputs/`、`accuracy-validation-plan.md` など、バックアップする研究データ・資料 |
+| パスワード管理アプリなど | パスワード、APIキー、秘密鍵などの認証情報 |
+
+バックアップ用の作業フォルダーは、このプロジェクトの外に作成してください。公開用とバックアップ用でフォルダーと送信先を分け、次の手順で保存します。
+
+1. GitHubでバックアップ用リポジトリを作り、公開範囲を **Private** に設定します。
+2. そのリポジトリを、このプロジェクトとは別のフォルダーにクローンします。
+3. バックアップする研究データ・資料だけをコピーします。`.git/`、仮想環境、`node_modules/`、一時生成物はコピーしません。認証情報はPrivateでも平文でコミットしません。
+4. バックアップ用フォルダーで対象ファイルをステージし、`git remote -v` で送信先、`git diff --cached --name-only` で送信対象を確認してから、コミット・プッシュします。この公開用フォルダーの `origin` は変更しません。
+5. 次回以降も更新したデータ・資料をコピーし、バックアップ用フォルダーでコミット・プッシュします。
+
+通常のGitでは100 MiBを超えるファイルをGitHubへ送信できないため、大きな記録ファイルにはGit LFSなどを使用します。このプロジェクトでは、非公開バックアップ用のリポジトリ作成や自動バックアップの設定は行っていません。`.gitignore` の設定だけでバックアップされた状態にはなりません。
+
+参考：[GitHubのリポジトリと公開範囲](https://docs.github.com/en/repositories/creating-and-managing-repositories/about-repositories)、[認証情報をコミットしないための注意事項](https://docs.github.com/en/repositories/working-with-files/managing-files/adding-a-file-to-a-repository)、[大きなファイルの制限](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)。
