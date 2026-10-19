@@ -1,4 +1,7 @@
 .shooting-controls { border-top: 2px solid #0b7a75; }
+.shooting-play-only { justify-self: start; display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border: 1px solid #9ecbc7; border-radius: 6px; background: #fff; color: #075b57; font-size: 12px; line-height: 1.4; text-decoration: none; }
+.shooting-play-only:hover { background: #e1f3f0; border-color: #0b7a75; }
+.shooting-play-only:focus-visible { outline: 2px solid #0b7a75; outline-offset: 3px; }
 .shooting-review { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.5; }
 .shooting-review input { width: auto; margin-top: 3px; }
 .shooting-home .aim-controls, .shooting-home .export { display: none; }
