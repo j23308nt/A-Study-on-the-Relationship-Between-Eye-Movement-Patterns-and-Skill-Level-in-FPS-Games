@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#727e85">
+  <title>Pistol Range</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="3D射撃練習"></canvas>
+  <div id="hud" aria-label="成績">
+    <div class="stat"><span>命中</span><strong id="hits">0</strong></div>
+    <div class="timer"><strong id="time">60</strong><span>秒</span></div>
+    <div class="stat accuracy"><span>命中率</span><strong id="accuracy">—</strong></div>
+  </div>
+  <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmarker" aria-hidden="true"></div>
+  <div id="overlay">
+    <button id="start" type="button" disabled>準備中</button>
+    <p id="error" role="alert" hidden></p>
+  </div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

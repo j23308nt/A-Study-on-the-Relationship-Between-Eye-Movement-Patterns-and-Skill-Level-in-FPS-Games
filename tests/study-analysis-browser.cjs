@@ -1,0 +1,75 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict'), fs=require('node:fs'), os=require('node:os'), path=require('node:path');
+const F=require('./study-fixtures.cjs');
+const file=data=>({name:`${data.metadata.run_id}.json`,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+(async()=>{
+  const browser=await chromium.launch({headless:true,channel:process.platform==='win32'?'msedge':undefined});
+  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});
+  const errors=[],writes=[]; const artifacts=fs.mkdtempSync(path.join(os.tmpdir(),'study-analysis-ui-'));
+  page.on('pageerror',e=>errors.push(e.message)); page.on('request',r=>{if(r.method()!=='GET')writes.push(r.url());});
+  const url=new URL('study-analysis.html',process.env.VALIDATION_URL||'http://localhost:8000/').href;
+  try {
+    await page.goto(url); assert.equal(await page.locator('#studyWorkspace').isVisible(),false);
+    await page.screenshot({path:path.join(artifacts,'empty.png')});
+    const v1=F.validation(),v2=F.validation({id:'v2',session:2,offset:30}),free=F.validation({id:'free',head:'free'}),
+      partial=F.validation({id:'partial',partial:true,session:3}),aim=F.aim(),noHits=F.aim({id:'no-hits',session:2,noHits:true});
+    const legacy=F.validation({id:'legacy'}); delete legacy.metadata.head_condition;
+    await page.locator('#studyFiles').setInputFiles([v1,v2,free,partial,aim,noHits,legacy].map(file));
+    await page.waitForFunction(()=>document.querySelectorAll('#studyRunRows tr').length===7);
+    assert((await page.locator('#studyCounts').innerText()).includes('7 / 7'));
+    assert((await page.locator('#studyGroupRows').innerText()).includes('情報不足'));
+    assert((await page.locator('#studyGroupRows').innerText()).includes('中断・欠測を集計から除外'));
+    assert.equal(await page.locator('#studyValidationBars .study-bar-fill').count(),2);
+    await page.screenshot({path:path.join(artifacts,'overview.png'),fullPage:true});
+    await page.locator('#studyDetailSelect').selectOption(v1.metadata.run_id);
+    assert.equal(await page.locator('#studyPositions > div').count(),9);
+    assert.equal(await page.locator('#studyTrialRows tr').count(),27);
+    assert.equal(await page.locator('#studyTrend circle').count(),27);
+    assert(await page.locator('#studyHistogram rect').count()>0);
+    await page.locator('#detailTitle').scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(artifacts,'validation-detail.png')});
+    await page.locator('#studyDetailSelect').selectOption('free');
+    assert((await page.locator('#studyDetailWarning').innerText()).includes('参考値'));
+    await page.locator('#studyDetailSelect').selectOption(aim.metadata.run_id);
+    assert.equal(await page.locator('#studyTrialRows tr').count(),3);
+    assert.equal(await page.locator('#studyTrend circle').count(),2);
+    assert.equal(await page.locator('#studyTrend path').count(),1);
+    assert((await page.locator('#studyAimMetrics').innerText()).includes('2 / 3'));
+    await page.screenshot({path:path.join(artifacts,'aim-detail.png')});
+    await page.locator('#studyDetailSelect').selectOption('no-hits');
+    assert.equal(await page.locator('#studyHistogram rect').count(),0);
+    assert((await page.locator('#studyHistogram').textContent()).includes('ありません'));
+    // Identical run IDs are deduplicated; conflicting IDs preserve the original.
+    await page.locator('#studyFiles').setInputFiles(file(v1));
+    await page.waitForFunction(()=>document.getElementById('studyLoadStatus').textContent.includes('同一記録1件'));
+    const conflict=structuredClone(v1);conflict.metadata.environment_notes='changed';
+    await page.locator('#studyFiles').setInputFiles(file(conflict));
+    await page.waitForFunction(()=>document.getElementById('studyLoadErrors').textContent.includes('内容が異なります'));
+    assert.equal(await page.locator('#studyRunRows tr').count(),7);
+    const duplicate=F.validation({id:'duplicate',session:1});
+    await page.locator('#studyFiles').setInputFiles(file(duplicate));
+    await page.waitForFunction(()=>document.getElementById('studyGroupRows').textContent.includes('同じ回の複数実行'));
+    await page.locator('button[aria-label*="duplicateを読込一覧から除外"]').click();
+    assert(!(await page.locator('#studyGroupRows').innerText()).includes('同じ回の複数実行'));
+    await page.locator('#studyKind').selectOption('aim');assert.equal(await page.locator('#studyRunRows tr').count(),2);
+    await page.locator('#studyState').selectOption('incomplete');
+    assert((await page.locator('#studyRunRows').innerText()).includes('該当する記録がありません'));
+    await page.locator('#studyState').selectOption('all');
+    const promise=page.waitForEvent('download'); await page.locator('#studyRunExport').click();
+    const download=await promise, csv=fs.readFileSync(await download.path(),'utf8');
+    assert(csv.includes('mean_hit_response_ms'));assert(csv.includes('condition_code'));assert(csv.includes('aim-1'));assert(!csv.includes('validation-1'));
+    await page.locator('#studyFiles').setInputFiles({name:'wrong.json',mimeType:'application/json',buffer:Buffer.from('{"schema":"wrong"}')});
+    await page.waitForFunction(()=>document.getElementById('studyLoadErrors').textContent.includes('session.json'));
+    const unsafe=F.validation({id:'safe-text'});unsafe.metadata.participant_id='<img src=x onerror=alert(1)>';
+    await page.locator('#studyFiles').setInputFiles(file(unsafe));
+    await page.waitForFunction(()=>document.getElementById('studyLoadStatus').textContent.includes('1件追加'));
+    await page.locator('#studyKind').selectOption('all');assert.equal(await page.locator('img').count(),0);
+    await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:path.join(artifacts,'mobile.png'),fullPage:true});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.locator('#studyClear').click();assert.equal(await page.locator('#studyWorkspace').isVisible(),false);
+    assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
+    console.log(JSON.stringify({result:'PASS',checks:['both schemas','condition grouping','missing and aborted records','duplicates/conflicts','filters','validation heatmap','aim timeout and distribution','CSV export','safe text','responsive layout','no uploads'],artifacts}));
+  } catch(error) {await page.screenshot({path:path.join(artifacts,'failure.png')}).catch(()=>{});console.error('Artifacts:',artifacts);throw error;}
+  finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

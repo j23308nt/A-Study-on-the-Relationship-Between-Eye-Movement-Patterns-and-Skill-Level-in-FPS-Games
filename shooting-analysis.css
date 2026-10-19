@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #f1f4f6; color: #17242d; font: 15px/1.6 system-ui, 'Yu Gothic UI', sans-serif; }
+main { max-width: 1200px; margin: 28px auto; padding: 0 24px 40px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+h1 { font-size: 23px; } a { color: #086f71; } p { margin: 14px 0; }
+.file { display: block; padding: 20px 0; } input, button { font: inherit; } button { cursor: pointer; padding: 6px 18px; }
+#replayStage { position: relative; width: 100%; overflow: hidden; background: #829098; }
+#replayCanvas, #replayOverlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#replayOverlay { pointer-events: none; }
+.playback { display: flex; align-items: center; gap: 16px; margin: 15px 0; } #timeline { flex: 1; } #playTime { min-width: 130px; font-variant-numeric: tabular-nums; }
+#recordView > label { margin-right: 20px; }
+.table-wrap { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td, th { text-align: right; padding: 10px; border-bottom: 1px solid #d1d9de; } th { background: #e5ebee; }
+.note { color: #53646e; font-size: 13px; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { main { padding: 0 12px 30px; } header { flex-wrap: wrap; } .playback { gap: 8px; } #playTime { min-width: 85px; font-size: 12px; } }

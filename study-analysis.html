@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>測定結果の分析 — Eye Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="study-analysis.css">
+  </head>
+  <body class="study-page">
+    <main class="study-shell">
+      <header class="study-hero">
+        <div><span class="study-eyebrow">EYE TRACKER / MEASUREMENT ANALYSIS</span><h1>測定結果を分析する</h1><p>正確度検証と的クリック課題を、参加者・条件・セッションごとに確認。</p></div>
+        <nav><a href="index.html">トラッカーへ戻る</a><a href="analysis.html">通常CSVの分析</a></nav>
+      </header>
+      <section class="study-card study-upload" aria-labelledby="uploadTitle">
+        <div><h2 id="uploadTitle">1. 測定記録を読み込む</h2><p><code>recordings/validation</code> と <code>recordings/aim</code> の各実行フォルダにある <code>session.json</code> を選んでください。2種類を混ぜて複数選択・追加できます。</p></div>
+        <label class="study-picker">JSONを選択・追加<input id="studyFiles" type="file" accept=".json,application/json" multiple></label>
+        <p class="study-note">ファイルはブラウザ内で処理し、外部へ送信しません。元の測定記録は変更しません。1ファイル32 MiB、合計128 MiBまで。CSV単体は条件・時刻情報が不足するため対象外です。</p>
+        <p id="studyLoadStatus" role="status" aria-live="polite">まだ記録を読み込んでいません。</p>
+        <ul id="studyLoadErrors" class="study-errors"></ul>
+      </section>
+      <section id="studyWorkspace" hidden>
+        <section class="study-card" aria-labelledby="filterTitle">
+          <div class="study-heading"><h2 id="filterTitle">2. 比較する記録を絞る</h2><button id="studyClear" type="button">読込一覧をクリア</button></div>
+          <div class="study-filters">
+            <label>測定の種類<select id="studyKind"><option value="all">両方</option><option value="validation">正確度検証</option><option value="aim">的クリック課題</option></select></label>
+            <label>参加者<select id="studyParticipant"><option value="all">全員</option></select></label>
+            <label>頭部条件<select id="studyHead"><option value="all">すべて</option><option value="fixed">固定</option><option value="free">非固定</option><option value="unknown">不明</option></select></label>
+            <label>5点補正<select id="studyCorrection"><option value="all">すべて</option><option value="false">なし</option><option value="true">あり</option><option value="unknown">不明</option></select></label>
+            <label>記録の状態<select id="studyState"><option value="all">中断・欠測を含めて表示</option><option value="complete">完了・必要データあり</option><option value="incomplete">中断・欠測のみ</option></select></label>
+          </div>
+          <div id="studyCounts" class="study-counts"></div>
+          <p class="study-note">フィルターは表示と集計に共通です。中断・欠測を表示していても、条件別の平均には完全なセッションだけを使います。「除外」は読込一覧から外す操作で、元ファイルは削除しません。</p>
+          <div class="study-actions"><button id="studyRunExport" type="button">表示中の実行別集計CSV</button><button id="studyGroupExport" type="button">条件別集計CSV</button></div>
+        </section>
+        <section class="study-card" aria-labelledby="runsTitle">
+          <h2 id="runsTitle">実行ごとの結果</h2>
+          <div class="study-table-wrap"><table><caption>正確度は度（°）、クリック応答時間はms。— は算出不能で、0とは異なります。</caption><thead><tr><th>種類</th><th>参加者</th><th>頭部</th><th>補正</th><th>回</th><th>条件</th><th>状態</th><th>主指標</th><th>検出失敗率</th><th>有効視線</th><th>操作</th></tr></thead><tbody id="studyRunRows"></tbody></table></div>
+        </section>
+        <section class="study-card" aria-labelledby="groupsTitle">
+          <h2 id="groupsTitle">条件別・参加者別の集計</h2>
+          <p>同じ種類・参加者・頭部条件・表示条件・課題設定・コード版だけを集計します。各セッションの平均を等しく重み付けします。同一条件内でセッション番号が重複している場合は、どの実行を使うか決めて一覧から不要な実行を外してください。</p>
+          <div class="study-chart-grid">
+            <section><h3>正確度：平均誤差（°）</h3><div id="studyValidationBars" class="study-bars"></div></section>
+            <section><h3>クリック課題：平均命中応答時間（ms）</h3><div id="studyAimBars" class="study-bars"></div></section>
+          </div>
+          <div class="study-table-wrap"><table><thead><tr><th>種類 / 単位</th><th>参加者</th><th>頭部</th><th>条件</th><th>完了 / 読込</th><th>平均算出n</th><th>平均</th><th>中央値</th><th>標本SD</th><th>最小–最大</th><th>取扱い</th></tr></thead><tbody id="studyGroupRows"></tbody></table></div>
+          <p class="study-note">nは有効なセッション平均の個数で、参加者数・フレーム数ではありません。クリックが全て時間切れなら、課題を完了していても応答時間の平均は算出しません。標本SDはセッション間のばらつきで、信頼区間ではありません。</p>
+          <details><summary>条件コードの内訳を見る</summary><div id="studyConditions"></div></details>
+        </section>
+        <section class="study-card" aria-labelledby="detailTitle">
+          <div class="study-heading"><h2 id="detailTitle">3. 1つの実行を詳しく見る</h2><label>表示する実行<select id="studyDetailSelect"></select></label></div>
+          <p id="studyDetailSummary"></p><p id="studyDetailWarning" class="study-warning"></p>
+          <div id="studyValidationDetail" hidden>
+            <h3>位置別の正確度</h3><div id="studyPositions" class="study-positions"></div>
+            <p class="study-note">上からV1〜V3、V4〜V6、V7〜V9。濃い色ほど平均誤差が大きい位置です。色の尺度はこの実行内で相対的に変わり、合格・不合格を表しません。</p>
+            <div class="study-table-wrap"><table><thead><tr><th>位置</th><th>データあり試行</th><th>平均 (°)</th><th>95%点 (°)</th><th>未加工平均 (°)</th><th>失敗率</th><th>有効サンプル</th></tr></thead><tbody id="studyPositionRows"></tbody></table></div>
+          </div>
+          <div id="studyAimDetail" hidden><div id="studyAimMetrics" class="study-counts"></div></div>
+          <section id="studyReplay" class="study-replay" hidden aria-labelledby="studyReplayTitle">
+            <h3 id="studyReplayTitle">マウスと視線の時系列再生</h3>
+            <p id="studyReplayLegacy" class="study-warning"></p>
+            <div class="study-replay-controls">
+              <label>再生範囲<select id="studyReplayScope"></select></label>
+              <label>速度<select id="studyReplaySpeed"><option value="0.25">0.25倍</option><option value="0.5">0.5倍</option><option value="1" selected>1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label>
+              <label><input id="studyReplayGaze" type="checkbox" checked>視線</label>
+              <label><input id="studyReplayCursor" type="checkbox" checked>マウス</label>
+              <label><input id="studyReplayRaw" type="checkbox">未加工の視線座標</label>
+            </div>
+            <svg id="studyReplayStage" class="study-replay-stage" role="img" aria-label="時間に対応した的、マウス、視線、クリックの位置"></svg>
+            <div class="study-actions"><button id="studyReplayReset" type="button">先頭</button><button id="studyReplayBack" type="button">−100 ms</button><button id="studyReplayPlay" class="primary" type="button" aria-pressed="false">再生</button><button id="studyReplayNext" type="button">＋100 ms</button></div>
+            <label class="study-replay-seek">選択範囲の時間<input id="studyReplaySeek" type="range" min="0" max="0" step="1" value="0"></label>
+            <p id="studyReplayTime"></p><p id="studyReplayReadout" class="study-note"></p>
+            <p class="study-note">水色＝的、黄色の丸・線＝視線、オレンジの十字・破線＝マウス。クリックは緑＝命中、赤＝外れ、紫＝受付時間外で300ms表示します。軌跡は直近1秒、200ms超の空白では線を切ります。</p>
+            <p class="study-note">マウスはイベント処理時刻、視線は推定結果が利用可能になった処理終了時刻で表示し、未来の座標や欠測は補間しません。視線は未検出または200ms超の取得空白で丸を隠します。マウスは停止中に記録が増えないため、最後に記録した位置を保持します。画面外の座標は図外になります。実際の撮像・認識時刻や遅延を補正した同期映像ではありません。</p>
+          </section>
+          <div class="study-chart-grid">
+            <section><h3 id="studyTrendTitle">試行ごとの値</h3><svg id="studyTrend" class="study-chart" role="img" aria-label="試行ごとの測定値"></svg><p id="studyTrendNote" class="study-note"></p></section>
+            <section><h3 id="studyHistogramTitle">分布</h3><svg id="studyHistogram" class="study-chart" role="img" aria-label="測定値の度数分布"></svg><p id="studyHistogramNote" class="study-note"></p></section>
+          </div>
+          <div class="study-actions"><button id="studyTrialExport" type="button">この実行の試行別集計CSV</button></div>
+          <div class="study-table-wrap"><table><thead id="studyTrialHead"></thead><tbody id="studyTrialRows"></tbody></table></div>
+          <details><summary>測定条件・実行ID・コード版</summary><pre id="studyMetadata"></pre></details>
+        </section>
+      </section>
+      <aside class="study-card study-caution"><h2>研究上の読み取り方</h2><p>頭部非固定の正確度は、開始時の位置・距離に基づく参考値です。クリック応答時間は認識とマウス操作、機器・処理遅延を含みます。正確度が良いこととクリックが速いことは別の性質です。</p><p>同じ参加者ID・セッション番号でも、2種類の測定が同時・同条件だったとは限りません。このページは独立した測定として扱い、熟練度の分類・有意差検定・因果関係の判定は行いません。元の集計値を盲信せず、保存座標・時刻から集計を再計算します。</p></aside>
+    </main>
+    <script src="validation-core.js"></script><script src="aim-core.js"></script><script src="study-analysis-core.js"></script><script src="aim-replay-core.js"></script><script src="aim-replay.js"></script><script src="study-analysis.js"></script>
+  </body>
+</html>

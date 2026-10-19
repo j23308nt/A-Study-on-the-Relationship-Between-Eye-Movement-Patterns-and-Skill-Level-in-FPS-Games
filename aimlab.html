@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aim Lab 視線記録の手順</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+      body { overflow: auto; }
+      .aimlab-guide { max-width: 850px; margin: 32px auto; padding: 28px; background: white; border-radius: 20px; }
+      .aimlab-guide h1 { font-size: 28px; }
+      .aimlab-guide h2 { margin-top: 28px; font-size: 20px; }
+      .aimlab-guide p, .aimlab-guide li { line-height: 1.8; }
+      .aimlab-guide li { margin: 10px 0; }
+      .aimlab-guide pre { overflow-x: auto; padding: 16px; background: #111827; color: #f9fafb; border-radius: 10px; }
+      .aimlab-guide table { width: 100%; border-collapse: collapse; }
+      .aimlab-guide td, .aimlab-guide th { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
+      @media (max-width: 650px) { .aimlab-guide { margin: 12px; padding: 18px; } }
+    </style>
+  </head>
+  <body>
+    <main class="aimlab-guide">
+      <a href="index.html">← トラッカーに戻る</a>
+      <h1>Aim Labでクリック課題を計測する</h1>
+      <p>Aim Labを前面にしても、Windows用の専用アプリがカメラ映像から視線を推定し、ファイルに記録します。計測にはブラウザを開いたままにする必要はありません。</p>
+      <h2>初回の起動</h2>
+      <ol>
+        <li>トラッカーの「ブラウザのカメラを停止」を押し、他のカメラ使用アプリも終了します。</li>
+        <li>このプロジェクトのフォルダでPowerShellを開き、次のコマンドを実行します。</li>
+      </ol>
+      <pre><code>.\start-aimlab.ps1</code></pre>
+      <p>初回は専用Python環境・必要なライブラリ・顔検出モデルをダウンロードします。Python 3.11〜3.13とインターネット接続が必要です。2回目以降は保存した環境を使います。カメラを変更する場合は <code>.\start-aimlab.ps1 -Camera 1</code> のように指定します。</p>
+      <p>PowerShellでスクリプト実行が制限されている場合は、プロジェクトのフォルダで <code>powershell -ExecutionPolicy Bypass -File .\start-aimlab.ps1</code> を実行します。このコマンドのプロセスだけに適用されます。</p>
+      <p>9点校正のボタンが押せない場合は、画面上部のカメラ準備状況を確認してください。ブラウザ等のカメラを停止し、「カメラを再接続」を押します。改善しなければカメラ番号、または接続方式（auto／MSMF／DirectShow）を変更して再接続してください。ドライバーが応答しない場合はアプリを閉じて再起動します。</p>
+      <h2>校正から記録終了まで</h2>
+      <ol>
+        <li>参加者ID・セッション番号・Aim Labのタスク名を入力し、感度・FOV・DPI・観察距離・頭部条件を記録します。</li>
+        <li>実施条件の確認にチェックして「全画面で9点校正」を押します。1つずつ表示される点の中心を見ながら、各5回クリックします。顔を検出できないときはクリックを受け付けません。</li>
+        <li>校正完了後、Aim Labをプライマリ画面で開きます。校正時と同じ画面解像度で、表示が画面全体を覆う設定を使います。記録中に解像度が変わると停止します。</li>
+        <li>タスク開始直前に <strong>F8</strong> を押して視線記録を開始します。記録アプリは最小化され、Aim Labを操作したまま記録が続きます。</li>
+        <li>タスク終了直後に <strong>F9</strong> を押すと停止・保存し、記録アプリが再表示されます。次のセッションは再度9点校正を行います。</li>
+        <li>「保存フォルダを開く」で結果を確認します。<a href="analysis.html" target="_blank" rel="noopener">CSV分析ページ</a>に <code>gaze.csv</code> を読み込むと視線軌跡・時系列を確認できます。</li>
+      </ol>
+      <table>
+        <thead><tr><th>キー</th><th>動作</th></tr></thead>
+        <tbody>
+          <tr><td>F8</td><td>記録開始。押した時刻が計測の起点です。</td></tr>
+          <tr><td>F9</td><td>停止・保存。Aim Labを前面にしたまま使用できます。</td></tr>
+          <tr><td>F10</td><td>任意の時刻の目印を追加。タスク開始・終了の目印にも使えます。</td></tr>
+          <tr><td>Esc</td><td>校正画面を中止。Aim Lab実行中の停止にはF9を使います。</td></tr>
+        </tbody>
+      </table>
+      <h2>保存されるファイル</h2>
+      <p><code>recordings/aimlab/&lt;実行ID&gt;/</code> に保存します。CSVは取得ごとに書き出すため、異常終了時にも書き出し済みの行は残ります。異常終了後の <code>session.json</code> が <code>recording</code> の場合、その記録は完了扱いにしないでください。</p>
+      <table>
+        <tbody>
+          <tr><th>gaze.csv</th><td>有効な視線の座標・経過時間・速度。既存のCSV分析ページで読み込めます。</td></tr>
+          <tr><th>samples.csv</th><td>処理した全フレーム。検出失敗・未加工座標・処理開始／終了時刻も記録します。</td></tr>
+          <tr><th>events.csv</th><td>F8／F9／F10の時刻と前面アプリの切り替え。時刻合わせの参考に使います。</td></tr>
+          <tr><th>session.json</th><td>タスク名・実施条件・校正モデル・コード版・取得件数・終了理由。</td></tr>
+        </tbody>
+      </table>
+      <h2>結果を読むとき</h2>
+      <p>座標はプライマリ画面左上を原点とする物理ピクセルです。ブラウザ課題のCSSピクセルと区別してください。ブラウザとは別の検出モデル・校正で計測するため、このアプリでも正確度の実測確認が必要です。</p>
+      <p>Aim Labのスコア・命中・標的の出現時刻は自動取得しません。タスク結果はAim Lab側で保存し、参加者ID・セッション番号・タスク名で対応づけてください。F8／F10の目印は手動なので、標的出現からの応答時間やゲームとの厳密な同期には使えません。</p>
+      <p>カメラ映像そのものは保存しません。別画面へ移動したり、ゲーム表示を画面の一部に縮小したりした場合、視線座標とゲーム内の位置の対応は変わります。まず短い試行で、終了後の有効視線件数と <code>samples.csv</code> の取得間隔を確認してください。</p>
+    </main>
+  </body>
+</html>

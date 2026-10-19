@@ -1,0 +1,20 @@
+.shooting-controls { border-top: 2px solid #0b7a75; }
+.shooting-review { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; line-height: 1.5; }
+.shooting-review input { width: auto; margin-top: 3px; }
+.shooting-home .aim-controls, .shooting-home .export { display: none; }
+#shootingStage, #shootingQuality { position: fixed; inset: 0; z-index: 60; background: #829098; overflow: hidden; }
+#shootingStage[hidden], #shootingQuality[hidden] { display: none; }
+#shootingCanvas { display: block; width: 100%; height: 100%; cursor: none; }
+.shooting-playing > :not(#shootingStage) { pointer-events: none !important; }
+#shootingStage { user-select: none; touch-action: none; }
+.shooting-hud { position: absolute; inset: 25px 35px auto; display: flex; justify-content: space-between; color: #fff; font-size: 13px; text-shadow: 0 1px 4px #26323a80; font-variant-numeric: tabular-nums; pointer-events: none; }
+.shooting-hud b { font-size: 27px; margin-left: 8px; }
+.shooting-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font: 23px/1 monospace; text-shadow: 0 0 2px #000; pointer-events: none; }
+#shootingCountdown { position: absolute; top: 40%; width: 100%; text-align: center; font: 50px/1 system-ui; color: white; pointer-events: none; }
+#shootingQuality { background: #111827; }
+#shootingQualityProgress { display: block; margin-top: 30px; text-align: center; color: white; }
+#shootingQualityDot { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #25d2df; transform: translate(-50%,-50%); border: 2px solid white; }
+.shooting-measuring .gaze-dot, .shooting-measuring .camera-preview, .shooting-measuring #trailSvg,
+.shooting-measuring #heatmapCanvas, .shooting-measuring .panel { visibility: hidden !important; }
+#shootingSetupError { color: #b91c1c; margin: 12px 0; }
+#shootingResults p { margin: 14px 0; line-height: 1.7; }

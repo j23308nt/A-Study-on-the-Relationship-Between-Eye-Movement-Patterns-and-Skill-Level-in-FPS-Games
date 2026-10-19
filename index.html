@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MediaPipe Eye Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="shooting.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="panel" aria-label="Control panel">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>Eye Tracker</h1>
+            <p>MediaPipe Face Mesh</p>
+          </div>
+        </div>
+
+        <section class="status-card" aria-live="polite">
+          <div class="status-row">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">待機中</span>
+          </div>
+          <p id="hintText">カメラを許可して、画面上の9点を順番に見ながらクリックしてください。</p>
+        </section>
+
+        <section class="controls" aria-label="Tracker controls">
+          <button class="primary" id="startBtn" type="button">開始</button>
+          <button id="calibrateBtn" type="button" disabled>キャリブレーション</button>
+          <button id="correctionBtn" type="button" disabled>5点補正</button>
+          <button id="pauseBtn" type="button" disabled>一時停止</button>
+          <button id="resetBtn" type="button" disabled>リセット</button>
+        </section>
+
+        <section class="validation-controls shooting-controls" aria-label="3D射撃の視線研究">
+          <h2>3D射撃・視線計測</h2>
+          <p id="shootingStatus" aria-live="polite">条件入力から校正・正確度確認へ進みます。</p>
+          <button id="shootingSetupBtn" type="button">1. 条件入力・9点校正</button>
+          <button id="shootingCheckBtn" type="button" disabled>2. 正確度を再確認（約9秒）</button>
+          <label class="shooting-review"><input id="shootingPrecisionAccepted" type="checkbox" disabled>正確度の結果を確認しました</label>
+          <button id="shootingRunBtn" class="primary" type="button" disabled>3. 射撃と計測を開始（60秒）</button>
+          <button id="shootingResultsBtn" type="button" disabled>今回の結果・保存</button>
+          <button id="shootingRecoveryBtn" type="button" hidden>未保存記録を復元</button>
+          <a class="analysis-link" href="shooting-analysis.html" target="_blank" rel="noopener">3D射撃の分析・再生</a>
+        </section>
+
+        <section class="validation-controls" aria-label="正確度の検証">
+          <h2>視角で正確度を検証</h2>
+          <p id="validationStatus" aria-live="polite">カメラ開始後、全画面で準備してください。</p>
+          <button id="validationSetupBtn" type="button">1. 条件入力・全画面で校正</button>
+          <p>9点校正と中央スコアの測定が終われば開始できます。「5点補正」は任意です。</p>
+          <button id="validationRunBtn" class="primary" type="button" disabled>2. 検証を開始（約81秒）</button>
+          <button id="validationResultsBtn" type="button">検証結果・過去の結果を比較</button>
+        </section>
+
+        <section class="validation-controls aim-controls" aria-label="Aim Labのクリック課題">
+          <h2>Aim Labでクリック課題</h2>
+          <p>Aim Labを操作しながら、専用アプリで視線を記録します。</p>
+          <a class="analysis-link" href="aimlab.html" target="_blank" rel="noopener">Aim Labの計測手順を開く</a>
+          <button id="aimlabReleaseCameraBtn" type="button">ブラウザのカメラを停止</button>
+          <p id="aimlabReleaseStatus" aria-live="polite">専用アプリの起動前にカメラを停止してください。</p>
+        </section>
+
+        <section class="validation-controls aim-controls" aria-label="ブラウザの簡易クリック課題">
+          <h2>ブラウザの簡易クリック課題（旧）</h2>
+          <p id="aimStatus" aria-live="polite">的をクリックし、応答時間と視線軌跡を記録します。</p>
+          <button id="aimSetupBtn" type="button">1. 課題設定・全画面で校正</button>
+          <button id="aimRunBtn" class="primary" type="button" disabled>2. 的クリック課題を開始</button>
+          <button id="aimResultsBtn" type="button">課題結果・視線軌跡</button>
+        </section>
+
+        <section class="metrics" aria-label="Metrics">
+          <div>
+            <span>サンプル</span>
+            <strong id="sampleCount">0</strong>
+          </div>
+          <div>
+            <span>中央スコア（参考）</span>
+            <strong id="accuracyValue">--</strong>
+          </div>
+          <div>
+            <span>X</span>
+            <strong id="xValue">--</strong>
+          </div>
+          <div>
+            <span>Y</span>
+            <strong id="yValue">--</strong>
+          </div>
+        </section>
+
+        <section class="options" aria-label="Options">
+          <label>
+            <input id="trailToggle" type="checkbox" checked>
+            軌跡を表示
+          </label>
+          <label>
+            <input id="heatmapToggle" type="checkbox" checked>
+            ヒートマップ
+          </label>
+          <label>
+            <input id="videoToggle" type="checkbox" checked>
+            カメラプレビュー
+          </label>
+        </section>
+
+        <section class="export">
+          <button id="downloadBtn" type="button" disabled>計測開始</button>
+          <a class="analysis-link" href="analysis.html">CSV分析ページを開く</a>
+          <a class="analysis-link" href="study-analysis.html" target="_blank" rel="noopener">正確度・的クリック課題の分析</a>
+          <p>計測停止時に recordings フォルダへCSVを自動保存します。</p>
+        </section>
+      </aside>
+
+      <section class="stage" aria-label="Eye tracking stage">
+        <canvas id="heatmapCanvas"></canvas>
+        <svg id="trailSvg" aria-hidden="true"></svg>
+        <div class="gaze-dot" id="gazeDot" aria-hidden="true"></div>
+        <div class="empty-state" id="emptyState">
+          <h2>視線トラッキングの準備ができています</h2>
+          <p>開始後、顔を画面中央に向けてキャリブレーションしてください。</p>
+        </div>
+      </section>
+    </main>
+
+    <div class="calibration-layer is-hidden" id="calibrationLayer" aria-label="Calibration targets"></div>
+    <div class="calibration-modal is-hidden" id="calibrationModal" role="dialog" aria-modal="true" aria-labelledby="calibrationTitle">
+      <div class="calibration-dialog">
+        <h2 id="calibrationTitle">Calibration</h2>
+        <p>画面上の9つの点を見ながらクリックします。各点は5回クリックすると黄色になります。最後に中央の点を5秒見て、参考用の中央スコアを測定します。視角での正確度は別の検証機能で評価します。</p>
+        <button class="primary" id="modalCalibrateBtn" type="button">Calibrate</button>
+      </div>
+    </div>
+
+    <dialog id="validationSetup" class="validation-dialog">
+      <form id="validationForm">
+        <div class="validation-heading"><h2>正確度検証の準備</h2><button id="validationSetupClose" type="button">閉じる</button></div>
+        <p>カメラを開始してから準備します。各セッションで9点校正をやり直します。5点補正は任意です。</p>
+        <fieldset class="validation-fields"><legend>参加者とセッション</legend>
+          <label>参加者ID<input id="vParticipant" value="P01" required pattern="[A-Za-z0-9_-]{1,32}" maxlength="32"></label>
+          <label>セッション番号（頭部条件ごと）<input id="vSession" type="number" min="1" max="3" step="1" value="1" required></label>
+          <label>視力矯正<select id="vVision"><option value="unaided">裸眼</option><option value="glasses">眼鏡</option><option value="contacts">コンタクト</option></select></label>
+          <label>頭部の条件<select id="vHeadCondition"><option value="fixed">固定する</option><option value="free">固定しない</option></select></label>
+        </fieldset>
+        <fieldset class="validation-fields"><legend>画面と距離</legend>
+          <label>表示領域の幅 (cm)<input id="vWidth" type="number" min="1" max="300" step="0.1" value="29.5" required></label>
+          <label>表示領域の高さ (cm)<input id="vHeight" type="number" min="1" max="300" step="0.1" value="16.7" required></label>
+          <label>目から画面の距離 (cm)<input id="vDistance" type="number" min="5" max="300" step="0.1" value="30" required></label>
+          <label>画面解像度・横 (px)<input id="vScreenWidth" type="number" min="100" max="20000" step="1" value="1920" required></label>
+          <label>画面解像度・縦 (px)<input id="vScreenHeight" type="number" min="100" max="20000" step="1" value="1080" required></label>
+        </fieldset>
+        <fieldset class="validation-fields"><legend>環境の記録</legend>
+          <label>OS拡大率<input id="vOsScale" value="未確認" maxlength="80"></label>
+          <label>ブラウザ倍率<input id="vZoom" value="100%" maxlength="80"></label>
+          <label class="validation-wide">カメラ位置・照明・画面輝度・特記事項<textarea id="vNotes" rows="2" maxlength="1500" placeholder="例：内蔵カメラ、室内灯点灯、カーテン閉、輝度固定"></textarea></label>
+        </fieldset>
+        <p id="validationHeadNote">校正から検証終了まで頭部を固定してください。固定方法は特記事項に記録してください。</p>
+        <label class="validation-check"><input id="vPositionConfirmed" type="checkbox" required>選んだ頭部条件を準備し、開始時の目の中点を画面中央の正面・上記の距離に合わせました。</label>
+        <p>検証中は点の中心を見続けてください。視線カーソル等は消えます。Escで中断し、途中のデータも保存します。画面の切替・サイズ変更でも中断します。</p>
+        <p id="validationSetupError" class="validation-error" role="alert"></p>
+        <button class="primary" id="validationPrepareBtn" type="submit">全画面にして9点校正を開始</button>
+      </form>
+    </dialog>
+
+    <div id="validationOverlay" class="validation-overlay" hidden tabindex="-1" aria-label="正確度検証中。Escで中断">
+      <div id="validationCountdown" class="validation-countdown"></div>
+      <div id="validationTarget" class="validation-target" hidden><span></span></div>
+    </div>
+
+    <dialog id="validationResults" class="validation-dialog validation-results">
+      <div class="validation-heading"><h2>正確度の検証結果</h2><button id="validationResultsClose" type="button">閉じる</button></div>
+      <p id="validationSummary">検証結果はまだありません。</p>
+      <p id="validationAngleNote"></p>
+      <p>検証終了時に全画面表示を解除します。Escでこの結果画面を閉じられます。結果は再表示できます。</p>
+      <p id="validationSaveStatus" aria-live="polite"></p>
+      <p><a href="study-analysis.html" target="_blank" rel="noopener">分析ページで複数の測定結果を比較する</a></p>
+      <div class="validation-actions">
+        <button id="validationSaveBtn" type="button" disabled>サーバー保存を再試行</button>
+        <button id="validationJsonBtn" type="button" disabled>全記録JSONをダウンロード</button>
+        <button id="validationCsvBtn" type="button" disabled>フレームCSVをダウンロード</button>
+        <button id="validationPositionsBtn" type="button" disabled>位置別CSVをダウンロード</button>
+        <button id="validationTrialsBtn" type="button" disabled>試行別CSVをダウンロード</button>
+      </div>
+      <div class="validation-table-wrap"><table class="validation-table">
+        <caption>主解析は各試行の後半2秒。角度は度（°）。— は算出不能です。</caption>
+        <thead><tr><th scope="col">位置</th><th scope="col">データあり試行</th><th scope="col">平均誤差</th><th scope="col">95%点</th><th scope="col">未加工平均</th><th scope="col">検出失敗率</th><th scope="col">有効サンプル</th></tr></thead>
+        <tbody id="validationPositionRows"></tbody>
+      </table></div>
+      <p class="validation-footnote">平均は試行を等しく重み付け。95%点は位置ごとの有効サンプルの95パーセンタイルです。失敗率は処理フレーム基準で、未処理フレームは分母に含みません。記録の空白・取得頻度は試行別CSVで確認してください。合否や熟練度は判定しません。</p>
+      <section class="validation-comparison">
+        <h3>セッションを比較</h3>
+        <label>保存した session.json を複数選択<input id="validationCompareInput" type="file" accept=".json,application/json" multiple></label>
+        <p id="validationCompareStatus" aria-live="polite">頭部条件ごとに3セッションを並べて確認できます。非固定の角度は開始位置・距離に基づく参考値です。</p>
+        <div class="validation-table-wrap"><table class="validation-table"><thead><tr><th>参加者</th><th>頭部条件</th><th>回</th><th>状態</th><th>平均誤差 (°)</th><th>実行ID</th></tr></thead><tbody id="validationCompareRows"></tbody></table></div>
+      </section>
+    </dialog>
+
+    <dialog id="aimSetup" class="validation-dialog">
+      <form id="aimForm">
+        <div class="validation-heading"><h2>的クリック課題の設定</h2><button id="aimSetupClose" type="button">閉じる</button></div>
+        <p>静止した的が1個ずつランダムに現れます。マウスを動かして的を左クリックしてください。外した場合は同じ的を狙い直せます。9点校正は必須、5点補正は任意です。</p>
+        <fieldset class="validation-fields"><legend>参加者・測定条件</legend>
+          <label>参加者ID<input id="aParticipant" value="P01" required pattern="[A-Za-z0-9_-]{1,32}" maxlength="32"></label>
+          <label>セッション番号<input id="aSession" type="number" min="1" max="999" value="1" required></label>
+          <label>視力矯正<select id="aVision"><option value="unaided">裸眼</option><option value="glasses">眼鏡</option><option value="contacts">コンタクト</option></select></label>
+          <label>頭部条件<select id="aHead"><option value="fixed">固定する</option><option value="free">固定しない</option></select></label>
+          <label>画面の幅 (cm)<input id="aWidth" type="number" min="1" max="300" step="0.1" value="29.5" required></label>
+          <label>画面の高さ (cm)<input id="aHeight" type="number" min="1" max="300" step="0.1" value="16.7" required></label>
+          <label>開始時の観察距離 (cm)<input id="aDistance" type="number" min="5" max="300" step="0.1" value="30" required></label>
+          <label class="validation-wide">環境・マウス設定・特記事項<textarea id="aNotes" rows="2" maxlength="1500" placeholder="照明、固定方法、ブラウザ倍率、OS拡大率、マウスDPI・感度など"></textarea></label>
+        </fieldset>
+        <fieldset class="validation-fields"><legend>課題設定</legend>
+          <label>的の数<input id="aCount" type="number" min="1" max="100" value="30" required></label>
+          <label>的の直径 (CSS px)<input id="aDiameter" type="number" min="16" max="160" value="48" required></label>
+          <label>1個の制限時間 (ms)<input id="aTimeout" type="number" min="500" max="10000" step="100" value="3000" required></label>
+          <label>乱数シード（空欄でランダム）<input id="aSeed" type="number" min="0" max="4294967295" step="1" placeholder="例：42"></label>
+        </fieldset>
+        <p>開始前3秒のカウントダウン、的の間には0.5〜1秒の空白があります。同じシード・設定・表示サイズなら同じ位置順です。マウスカーソルは表示し、視線カーソルや顔プレビューは隠します。</p>
+        <label class="validation-check"><input id="aConfirmed" type="checkbox" required>選んだ頭部条件と開始位置・距離を準備しました。校正から課題終了まで同じ条件で行います。</label>
+        <p>Esc・全画面解除・画面切替で中断し、途中の記録も保存します。応答時間は認識とマウス操作を含み、純粋な認識速度ではありません。</p>
+        <p id="aimSetupError" class="validation-error" role="alert"></p>
+        <button id="aimPrepareBtn" class="primary" type="submit">全画面にして9点校正を開始</button>
+      </form>
+    </dialog>
+    <div id="aimOverlay" class="aim-overlay" hidden tabindex="-1" aria-label="的クリック課題。左クリックで的を狙う。Escで中断">
+      <div id="aimProgress" class="aim-progress"></div>
+      <div id="aimCountdown" class="aim-countdown"></div>
+      <div id="aimTarget" class="aim-target" hidden></div>
+    </div>
+    <dialog id="aimResults" class="validation-dialog validation-results">
+      <div class="validation-heading"><h2>的クリック課題の結果</h2><button id="aimResultsClose" type="button">閉じる</button></div>
+      <p id="aimSummary">課題結果はまだありません。</p>
+      <p id="aimSaveStatus" aria-live="polite"></p>
+      <p><a href="study-analysis.html" target="_blank" rel="noopener">分析ページで複数の測定結果を比較する</a></p>
+      <div class="validation-actions">
+        <button id="aimSaveBtn" type="button" disabled>サーバー保存を再試行</button>
+        <button id="aimJsonBtn" type="button" disabled>全記録JSON</button>
+        <button id="aimTrialsBtn" type="button" disabled>試行別CSV</button>
+        <button id="aimGazeBtn" type="button" disabled>視線CSV</button>
+        <button id="aimClicksBtn" type="button" disabled>クリックCSV</button>
+        <button id="aimCursorBtn" type="button" disabled>カーソル移動CSV</button>
+      </div>
+      <label>保存した課題JSONを開く<input id="aimImport" type="file" accept=".json,application/json"></label>
+      <p id="aimImportError" role="alert"></p>
+      <div class="validation-actions">
+        <label>軌跡を表示する試行<select id="aimTrialSelect"></select></label>
+        <label><input id="aimRawToggle" type="checkbox">未加工座標を表示</label>
+        <label><input id="aimCursorToggle" type="checkbox" checked>カーソル軌跡を重ねる</label>
+      </div>
+      <svg id="aimTrajectory" class="aim-trajectory" role="img" aria-label="選択した試行の的・視線軌跡・クリック位置"></svg>
+      <p id="aimTrialInfo"></p>
+      <p class="validation-footnote">水色の円＝的、黄色の線＝視線軌跡（淡→濃が時間順）、オレンジの破線＝カーソル軌跡、緑の×＝命中、赤の×＝外れ。未検出・200ms超の空白・的消去をまたぐ視線処理は線でつなぎません。カーソルの線も200ms超の間隔では切ります。視線は推定値で、的を認識した証拠ではありません。</p>
+      <div class="validation-table-wrap"><table class="validation-table"><thead><tr><th>試行</th><th>結果</th><th>最初のクリック (ms)</th><th>命中まで (ms)</th><th>外れ</th><th>有効視線サンプル</th></tr></thead><tbody id="aimTrialRows"></tbody></table></div>
+      <p>応答時間は的のCSS表示更新からマウス左ボタンを押したイベントの処理開始までです。機器・描画遅延を含みます。命中時間の平均・中央値は命中試行のみなので、時間切れ・外れ回数も併せて確認してください。Escで閉じられます。</p>
+    </dialog>
+
+    <dialog id="shootingSetup" class="validation-dialog">
+      <form id="shootingForm">
+        <div class="validation-heading"><h2>3D射撃の測定条件</h2><button id="shootingSetupClose" type="button">閉じる</button></div>
+        <fieldset class="validation-fields"><legend>参加者・実施条件</legend>
+          <label>参加者ID<input id="sParticipant" value="P01" required pattern="[A-Za-z0-9_-]{1,32}" maxlength="32"></label>
+          <label>セッション番号<input id="sSession" type="number" min="1" max="999" value="1" required></label>
+          <label>頭部条件<select id="sHead"><option value="fixed">固定する</option><option value="free">固定しない</option></select></label>
+          <label>視力矯正<select id="sVision"><option value="unaided">裸眼</option><option value="glasses">眼鏡</option><option value="contacts">コンタクト</option></select></label>
+          <label>画面幅 (cm)<input id="sWidth" type="number" min="1" max="300" step="0.1" value="29.5" required></label>
+          <label>画面高さ (cm)<input id="sHeight" type="number" min="1" max="300" step="0.1" value="16.7" required></label>
+          <label>観察距離 (cm)<input id="sDistance" type="number" min="5" max="300" step="0.1" value="30" required></label>
+          <label>マウスDPI<input id="sDpi" type="number" min="1" max="100000" value="800" required></label>
+          <label>感度 (rad / mouse px)<input id="sSensitivity" type="number" min="0.0001" max="0.02" step="0.0001" value="0.0018" required></label>
+          <label>乱数シード<input id="sSeed" type="number" min="0" max="4294967295" value="42" required></label>
+          <label class="validation-wide">照明・OS拡大率・ブラウザ倍率・特記事項<textarea id="sNotes" rows="2" maxlength="1500"></textarea></label>
+        </fieldset>
+        <p>全画面で9点校正後、5位置の正確度を自動確認します。5点補正は準備画面から任意で実施でき、実施後は正確度を再確認します。</p>
+        <label class="validation-check"><input id="sConfirmed" type="checkbox" required>頭部条件・画面・距離を準備し、校正から課題終了まで同じ条件で実施します。</label>
+        <p id="shootingSetupError" role="alert"></p>
+        <button id="shootingPrepareBtn" class="primary" type="submit">カメラ開始・全画面で校正</button>
+      </form>
+    </dialog>
+    <div id="shootingQuality" hidden><span id="shootingQualityProgress"></span><div id="shootingQualityDot"></div></div>
+    <div id="shootingStage" hidden tabindex="-1">
+      <canvas id="shootingCanvas" aria-label="3D射撃課題"></canvas>
+      <div class="shooting-hud"><span>命中 <b id="shootingHits">0</b></span><span><b id="shootingTime">60</b> 秒</span><span>命中率 <b id="shootingAccuracy">—</b></span></div>
+      <div class="shooting-crosshair" aria-hidden="true">＋</div>
+      <div id="shootingCountdown"></div>
+    </div>
+    <dialog id="shootingResults" class="validation-dialog validation-results">
+      <div class="validation-heading"><h2>3D射撃の測定結果</h2><button id="shootingResultsClose" type="button">閉じる</button></div>
+      <p id="shootingSummary"></p><p id="shootingSaveStatus" aria-live="polite"></p>
+      <div class="validation-actions"><button id="shootingSaveBtn" type="button">保存を再試行</button><button id="shootingJsonBtn" type="button">全記録JSON</button><button id="shootingCsvBtn" type="button">CSV一式を保存</button></div>
+      <a id="shootingAnalysisLink" href="shooting-analysis.html" target="_blank" rel="noopener">分析・時系列再生を開く</a>
+      <p class="validation-footnote">正確度確認は短時間の5位置チェックです。取得率は正確度ではありません。視線到達は推定であり、認識時刻を示すものではありません。頭部非固定の視角は開始位置・入力距離に基づく参考値です。</p>
+    </dialog>
+
+    <script src="mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="app.js"></script>
+    <script src="validation-core.js"></script>
+    <script src="validation.js"></script>
+    <script src="aim-core.js"></script>
+    <script src="aim.js"></script>
+    <script src="shooting-core.js"></script>
+    <script type="module" src="shooting.mjs"></script>
+  </body>
+</html>

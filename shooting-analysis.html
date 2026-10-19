@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3D射撃の分析</title>
+<link rel="stylesheet" href="shooting-analysis.css"></head>
+<body><main>
+  <header><h1>3D射撃の分析</h1><a href="index.html?study=shooting">計測へ戻る</a></header>
+  <label class="file">全記録JSONを開く <input id="recordFile" type="file" accept=".json,application/json"></label>
+  <p id="loadStatus" role="status">session.jsonを読み込んでください。</p>
+  <section id="recordView" hidden>
+    <p id="identity"></p><p id="summary"></p><p id="qualityInfo"></p>
+    <div id="replayStage"><canvas id="replayCanvas"></canvas><svg id="replayOverlay" aria-label="視線と球の位置"></svg></div>
+    <div class="playback"><button id="play" type="button">再生</button><input id="timeline" aria-label="再生位置" type="range" min="0" max="1" step="1" value="0"><span id="playTime"></span></div>
+    <label><input id="rawGaze" type="checkbox">未加工の視線</label>
+    <label><input id="showAoi" type="checkbox" checked>誤差許容付き領域</label>
+    <p id="frameInfo"></p>
+    <p class="note">黄色：視線推定（直近1秒）、白：照準、水色：球。未検出・200ms超の空白はつなぎません。再生は描画記録と処理時刻に基づき、カメラ露光時刻や実際の発光時刻との同期は保証しません。</p>
+    <div class="table-wrap"><table><thead><tr><th>球</th><th>結果</th><th>最初の射撃 ms</th><th>命中 ms</th><th>視線到達推定 ms</th><th>外れ</th><th>有効視線</th><th>命中時の視線距離 px</th></tr></thead><tbody id="targetRows"></tbody></table></div>
+    <p class="note">視線到達は誤差許容付き領域への最初の侵入で、認識・注視の確定時刻ではありません。命中時の視線距離は直前100ms以内の有効な処理フレームから取得し、なければ空欄とします。応答時間の平均は命中した球のみが対象です。</p>
+  </section>
+</main><script src="shooting-core.js"></script><script type="module" src="shooting-analysis.mjs"></script></body></html>

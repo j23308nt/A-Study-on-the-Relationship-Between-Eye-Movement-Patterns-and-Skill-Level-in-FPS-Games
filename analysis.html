@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gaze Pattern Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="analysis-page">
+    <main class="analysis-shell">
+      <header class="analysis-hero">
+        <div>
+          <span>CSV Analysis</span>
+          <h1>視線移動パターン分析</h1>
+          <p>ゲーム熟練度との関係を見るための視線指標をCSVから集計します。</p>
+        </div>
+        <div><a class="analysis-link" href="index.html">トラッカーへ戻る</a><a class="analysis-link" href="study-analysis.html">正確度・的クリック課題の分析</a></div>
+      </header>
+
+      <section class="analysis-upload" aria-label="CSV upload">
+        <label class="file-picker">
+          <span>CSV読み込み</span>
+          <input id="csvInput" type="file" accept=".csv,text/csv">
+        </label>
+        <p id="analysisStatus">recordings フォルダに保存されたCSVを選択してください。</p>
+      </section>
+
+      <section class="results-panel analysis-results is-hidden" id="resultsPanel" aria-label="CSV results">
+        <div class="results-header">
+          <div>
+            <span>Gaze Pattern Analysis</span>
+            <h2 id="resultsTitle">視線移動パターン</h2>
+          </div>
+          <button id="closeResultsBtn" type="button">閉じる</button>
+        </div>
+
+        <button class="details-toggle" id="toggleDetailsBtn" type="button" aria-expanded="false">詳細指標を表示</button>
+
+        <div class="results-grid is-hidden" id="detailsGrid">
+          <div>
+            <span>分析サンプル</span>
+            <strong id="resultSamples">--</strong>
+          </div>
+          <div>
+            <span>注視安定率</span>
+            <strong id="resultDuration">--</strong>
+          </div>
+          <div>
+            <span>サッカード頻度</span>
+            <strong id="resultAvgSpeed">--</strong>
+          </div>
+          <div>
+            <span>探索範囲</span>
+            <strong id="resultDistance">--</strong>
+          </div>
+          <div>
+            <span>中心依存度</span>
+            <strong id="resultAveragePoint">--</strong>
+          </div>
+          <div>
+            <span>視線分布エントロピー</span>
+            <strong id="resultScreen">--</strong>
+          </div>
+        </div>
+
+        <canvas id="resultPathCanvas" class="result-path" width="920" height="380"></canvas>
+
+        <section class="timeline-panel" aria-label="Gaze timeline playback">
+          <div class="timeline-controls">
+            <button id="playTimelineBtn" type="button">再生</button>
+            <label>
+              <span>速度</span>
+              <select id="playbackSpeedSelect">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+                <option value="4">4x</option>
+              </select>
+            </label>
+          </div>
+          <input id="timelineSlider" type="range" min="0" max="0" value="0" step="1">
+          <div class="timeline-readout">
+            <span id="timelineTime">--</span>
+            <span id="timelinePoint">--</span>
+            <span id="timelinePhase">--</span>
+          </div>
+        </section>
+
+        <div class="phase-summary">
+          <h3>フェーズ別パターン</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>フェーズ</th>
+                <th>件数</th>
+                <th>注視率</th>
+                <th>サッカード率</th>
+                <th>探索範囲</th>
+              </tr>
+            </thead>
+            <tbody id="phaseSummaryBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="analysis.js"></script>
+  </body>
+</html>
