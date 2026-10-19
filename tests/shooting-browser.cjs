@@ -53,7 +53,10 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       HTMLVideoElement.prototype.cancelVideoFrameCallback = id => cancelAnimationFrame(id);
     });
     await page.clock.install(); await page.clock.pauseAt(new Date(Date.now() + 1000));
-    await page.goto(`http://localhost:${port}/index.html?study=shooting`);
+    for (const host of ['localhost', '127.0.0.1']) {
+      await page.goto(`http://${host}:${port}/index.html?study=shooting`);
+      assert.notEqual(await page.locator('#statusText').innerText(), '起動URLを確認', `${host} must allow camera startup`);
+    }
     async function prepare() {
       await page.locator('#shootingSetupBtn').click(); await page.locator('#sConfirmed').check();
       await page.locator('#shootingPrepareBtn').click(); await page.clock.runFor(100);
@@ -117,7 +120,7 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     console.log('complete_run_and_save_retry_pass');
     const analysis = await browser.newPage({ viewport: { width: 1100, height: 900 } });
     analysis.on('pageerror', error => errors.push(error.message));
-    await analysis.goto(`http://localhost:${port}/shooting-analysis.html`);
+    await analysis.goto(`http://127.0.0.1:${port}/shooting-analysis.html`);
     await analysis.locator('#recordFile').setInputFiles({ name: 'synthetic-session.json', mimeType: 'application/json', buffer: Buffer.from(first.files['session.json']) });
     await analysis.waitForFunction(() => document.getElementById('loadStatus').textContent.includes('読み込みました'));
     assert.equal(await analysis.locator('#targetRows tr').count(), complete.targets.length);

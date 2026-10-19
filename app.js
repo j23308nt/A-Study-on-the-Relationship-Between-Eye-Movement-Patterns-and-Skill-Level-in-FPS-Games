@@ -135,7 +135,9 @@
   const heatmap = elements.heatmapCanvas.getContext("2d", { alpha: true });
 
   function isAllowedOrigin() {
-    return window.location.protocol === "https:" || window.location.hostname === "localhost";
+    const { protocol, hostname } = window.location;
+    return protocol === "https:" || (protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(hostname));
   }
 
   function setStatus(kind, text, hint) {
@@ -163,7 +165,7 @@
     }
 
     if (!isAllowedOrigin()) {
-      setStatus("error", "localhostで開いてください", "カメラを使うため、http://localhost:8000/ またはHTTPSで開いてください。");
+      setStatus("error", "起動URLを確認", "カメラを使うため、http://localhost:8000/、http://127.0.0.1:8780/ またはHTTPSで開いてください。");
       return;
     }
 
@@ -214,7 +216,7 @@
       processVideoFrame();
     } catch (error) {
       stopCamera();
-      setStatus("error", "起動できません", error.message || "カメラ権限と http://localhost:8000/ のURLを確認してください。");
+      setStatus("error", "起動できません", error.message || "カメラ権限とローカルサーバーのURLを確認してください。");
     }
   }
 
@@ -1702,6 +1704,6 @@
   resizeCanvas();
 
   if (!isAllowedOrigin()) {
-    setStatus("error", "起動URLを確認", "このアプリは http://localhost:8000/ またはHTTPSで開いてください。file:// ではカメラが使えません。");
+    setStatus("error", "起動URLを確認", "このアプリは http://localhost:8000/、http://127.0.0.1:8780/ またはHTTPSで開いてください。file:// ではカメラが使えません。");
   }
 }());
