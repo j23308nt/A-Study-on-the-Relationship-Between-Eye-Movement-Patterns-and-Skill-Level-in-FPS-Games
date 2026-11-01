@@ -8,7 +8,7 @@ const fmt = v => Number.isFinite(v) ? v.toFixed(2) : '—';
 if (new URLSearchParams(location.search).get('study') === 'shooting') document.body.classList.add('shooting-home');
 let phase = 'idle', prepared = null, quality = null, qualityTracker = null, qualityFrames = [], qualityPoints = [];
 let scene = null, run = null, bundle = null, output = null, saved = true, saving = false, usedGeneration = null;
-let animation = 0, lastPaint = 0, qualityIndex = 0, gameAt = 0, random = null, sound = null;
+let animation = 0, lastPaint = 0, qualityIndex = 0, gameAt = 0, random = null, sound = null, shotSoundBuffer = null;
 let qualityDraining = false, lastCheckpoint = 0, checkpointPending = false, recovered = null;
 let checkpointTask = Promise.resolve();
 const backgroundInert = new Map();
@@ -156,13 +156,21 @@ async function finishQuality(reason = '') {
 el('shootingCheckBtn').onclick = () => { void startQuality(); };
 el('shootingPrecisionAccepted').onchange = readiness;
 
-function playSound() {
+function prepareSound() {
   try {
     if (!sound) sound = new AudioContext();
-    void sound.resume();
-    const buffer = sound.createBuffer(1, Math.floor(sound.sampleRate * .05), sound.sampleRate), data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sound.sampleRate * .009));
-    const source = sound.createBufferSource(), gain = sound.createGain(); source.buffer = buffer; gain.gain.value = .12;
+    if (!shotSoundBuffer) {
+      shotSoundBuffer = sound.createBuffer(1, Math.floor(sound.sampleRate * .05), sound.sampleRate);
+      const data = shotSoundBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sound.sampleRate * .009));
+    }
+    void sound.resume().then(() => playSound(0)).catch(() => {});
+  } catch { /* Sound is optional; a failed initialization must not block the task. */ }
+}
+function playSound(volume = .12) {
+  try {
+    if (!sound || sound.state !== 'running' || !shotSoundBuffer) return;
+    const source = sound.createBufferSource(), gain = sound.createGain(); source.buffer = shotSoundBuffer; gain.gain.value = volume;
     source.connect(gain).connect(sound.destination); source.onended = () => { source.disconnect(); gain.disconnect(); }; source.start();
   } catch { /* Audio is optional and uses a different random source than target placement. */ }
 }
@@ -171,6 +179,7 @@ el('shootingRunBtn').onclick = async () => {
   phase = 'starting'; readiness(); let acquired = false;
   try {
     if (!sameView() || document.fullscreenElement !== document.documentElement || !quality?.complete) throw Error('同じ全画面で校正と正確度確認を行ってください。');
+    prepareSound(); set('shootingCountdown', '準備中');
     el('shootingStage').hidden = false; document.body.classList.add('shooting-measuring');
     isolateShootingInput(true);
     if (!scene) scene = createShootingScene(el('shootingCanvas'), innerWidth, innerHeight);
@@ -178,7 +187,10 @@ el('shootingRunBtn').onclick = async () => {
     scene.reset(); scene.draw(performance.now());
     await el('shootingCanvas').requestPointerLock();
     if (document.pointerLockElement !== el('shootingCanvas')) throw Error('マウス操作の許可が必要です。');
-    if (!sameView()) throw Error('表示サイズが変わりました。再校正してください。');
+    scene.warmup();
+    if (!sameView() || document.fullscreenElement !== document.documentElement || document.hidden || document.pointerLockElement !== el('shootingCanvas')) {
+      throw Error('準備中に表示条件が変わりました。同じ全画面で開始し直してください。');
+    }
     const tracker = bridge.acquire(); acquired = true;
     if (signature(tracker) !== quality.tracker_signature) throw Error('校正・5点補正が変更されました。正確度を再確認してください。');
     const now = performance.now();

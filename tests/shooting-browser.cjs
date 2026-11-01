@@ -43,6 +43,22 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
         }
       };` }));
     await page.addInitScript(() => {
+      window.__initializationDuringGame = [];
+      const recordInitialization = kind => {
+        if (window.__shootingGameStarted) window.__initializationDuringGame.push(kind);
+      };
+      for (const Context of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+        if (!Context) continue;
+        const compileShader = Context.prototype.compileShader;
+        Context.prototype.compileShader = function (...args) {
+          recordInitialization('shader_compile'); return compileShader.apply(this, args);
+        };
+      }
+      const Audio = window.AudioContext;
+      window.AudioContext = class extends Audio {
+        constructor(...args) { super(...args); recordInitialization('audio_context'); }
+        createBuffer(...args) { recordInitialization('audio_buffer'); return super.createBuffer(...args); }
+      };
       navigator.mediaDevices.getUserMedia = async () => new MediaStream();
       HTMLVideoElement.prototype.play = async () => {};
       for (const [name, get] of Object.entries({ readyState: () => 4, videoWidth: () => 1280, videoHeight: () => 720, currentTime: () => Math.floor(performance.now() / 33) / 30 }))
@@ -57,6 +73,16 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       await page.goto(`http://${host}:${port}/index.html?study=shooting`);
       assert.notEqual(await page.locator('#statusText').innerText(), '起動URLを確認', `${host} must allow camera startup`);
     }
+    await page.evaluate(() => {
+      const Session = window.ShootingStudy.Session;
+      const startGame = Session.prototype.startGame, finish = Session.prototype.finish;
+      Session.prototype.startGame = function (...args) {
+        const result = startGame.apply(this, args); window.__shootingGameStarted = true; return result;
+      };
+      Session.prototype.finish = function (...args) {
+        const result = finish.apply(this, args); window.__shootingGameStarted = false; return result;
+      };
+    });
     async function prepare() {
       await page.locator('#shootingSetupBtn').click(); await page.locator('#sConfirmed').check();
       await page.locator('#shootingPrepareBtn').click(); await page.clock.runFor(100);
@@ -94,6 +120,8 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     assert.equal(await page.locator('.camera-preview').evaluate(e => getComputedStyle(e).visibility), 'hidden');
     await page.mouse.down(); await page.mouse.up(); await page.clock.runFor(200);
     assert.equal(await page.locator('#shootingHits').innerText(), '1');
+    assert.deepEqual(await page.evaluate(() => window.__initializationDuringGame), [],
+      'shader compilation and audio initialization must finish before the game, so the first shot cannot trigger a startup stall');
     await page.locator('#backgroundProbe').dispatchEvent('click');
     assert.equal(await page.evaluate(() => window.__backgroundActivations), 0, 'a shooting click must never activate a background button');
     assert.equal(await page.locator('#shootingStage').isVisible(), true, 'the first shot must leave the game running');

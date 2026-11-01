@@ -98,6 +98,18 @@ export function createShootingScene(canvas, width, height) {
       in_view: depth < 0 && Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };
   }
   return {
+    warmup() {
+      const targetVisible = target.visible, flashVisible = flash.visible, position = target.position.clone();
+      try {
+        // Include effects that would otherwise compile only on the first shot.
+        target.position.set(0, 1.65, -10.5); target.visible = true; flash.visible = true;
+        renderer.compile(scene, camera); renderer.render(scene, camera);
+        renderer.getContext().finish();
+      } finally {
+        target.position.copy(position); target.visible = targetVisible; flash.visible = flashVisible;
+        renderer.render(scene, camera); renderer.getContext().finish();
+      }
+    },
     reset() { camera.rotation.set(0, 0, 0); recoil = 0; target.visible = false; },
     look(dx, dy, sensitivity) {
       camera.rotation.y = THREE.MathUtils.clamp(camera.rotation.y - dx * sensitivity, LOOK_LIMITS.minYaw, LOOK_LIMITS.maxYaw);

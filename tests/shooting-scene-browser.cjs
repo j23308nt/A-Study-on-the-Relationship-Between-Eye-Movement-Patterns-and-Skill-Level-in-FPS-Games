@@ -26,6 +26,8 @@ const path = require('node:path');
       const { nextTarget } = await import('/sites/pistol-range/dist/session.js');
       const canvas = document.createElement('canvas');
       const scene = createShootingScene(canvas, 1000, 800);
+      scene.warmup();
+      if (scene.hit()) throw Error('Warmup must not leave an active target in the scene');
       const aimingCamera = new THREE.PerspectiveCamera(); aimingCamera.rotation.order = 'YXZ';
       const sensitivity = .0018;
       const sizes = [[1000, 800], [1920, 1080], [2560, 1080], [390, 844], [320, 2000], [3200, 800]];
