@@ -22,7 +22,7 @@
   }
   async function hashes() {
     const result = {};
-    for (const name of ["app.js", "aim-core.js", "aim.js", "validation-core.js", "validation.js", "index.html", "styles.css"]) {
+    for (const name of ["app.js", "calibration-core.js", "aim-core.js", "aim.js", "validation-core.js", "validation.js", "index.html", "styles.css"]) {
       const response = await fetch(name, { cache: "no-store" });
       if (!response.ok) throw new Error(`コード版を取得できません: ${name}`);
       const digest = await crypto.subtle.digest("SHA-256", await response.arrayBuffer());

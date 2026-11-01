@@ -36,6 +36,7 @@
     phaseSummaryBody: document.getElementById("phaseSummaryBody"),
     calibrationLayer: document.getElementById("calibrationLayer"),
     calibrationModal: document.getElementById("calibrationModal"),
+    calibrationMode: document.getElementById("calibrationMode"),
     modalCalibrateBtn: document.getElementById("modalCalibrateBtn"),
     emptyState: document.getElementById("emptyState")
   };
@@ -55,6 +56,8 @@
     completedCorrectionPoints: 0,
     calibrationSamples: [],
     baseCalibrationSamples: [],
+    calibrationCapture: null,
+    calibrationProtocol: null,
     correctionSamples: [],
     autoCorrection: null,
     regression: null,
@@ -305,6 +308,7 @@
     rememberFeatureFrame(features);
     drawLandmarkOverlay(landmarks);
     state.detectedFrames += 1;
+    updateCalibrationCapture(features);
     updateAutoCorrection(features);
 
     if (!state.regression) {
@@ -333,6 +337,7 @@
   function publishValidationFrame(values) {
     const frame = state.currentFrame;
     if (!frame || frame.emitted) return;
+    if (!values.features_detected) updateCalibrationCapture(null);
     frame.emitted = true;
     const { emitted, ...timing } = frame;
     window.dispatchEvent(new CustomEvent("gaze-frame", { detail: {
@@ -662,6 +667,15 @@
     state.completedCorrectionPoints = 0;
     state.calibrationSamples = [];
     state.baseCalibrationSamples = [];
+    state.calibrationCapture = null;
+    state.calibrationProtocol = {
+      mode: elements.calibrationMode.value, points: 9, samples_per_point: CLICKS_PER_POINT,
+      frames_per_sample: elements.calibrationMode.value === "single-click-batch" ? CALIBRATION_FRAME_WINDOW : null,
+      max_frames_per_sample: CALIBRATION_FRAME_WINDOW, trim_fraction: .25,
+      settle_ms: elements.calibrationMode.value === "single-click-batch" ? window.CalibrationSampling.SETTLE_MS : null,
+      non_overlapping_windows: elements.calibrationMode.value === "single-click-batch"
+    };
+    elements.calibrationMode.disabled = true;
     state.correctionSamples = [];
     state.autoCorrection = null;
     state.featureHistory = [];
@@ -673,7 +687,9 @@
     elements.calibrationModal.classList.add("is-hidden");
     renderCalibrationTargets(false);
     elements.calibrationLayer.classList.remove("is-hidden");
-    setStatus("active", "キャリブレーション中", "各点を見ながら5回クリックしてください。クリック時の虹彩位置を記録します。");
+    setStatus("active", "キャリブレーション中", state.calibrationProtocol.mode === "single-click-batch"
+      ? "各点を1回クリックし、黄色になるまで見つめてください。各点5サンプルを自動収集します。"
+      : "各点を見ながら5回クリックしてください。クリック時の虹彩位置を記録します。");
   }
 
   function beginCorrectionCalibration() {
@@ -716,6 +732,7 @@
       target.style.top = `${point.y}%`;
       target.style.opacity = String(Math.min(1, 0.2 + count * 0.16));
       target.textContent = measuringCenter ? "" : String(Math.min(count + 1, CLICKS_PER_POINT));
+      if (!measuringCenter && state.calibrationProtocol?.mode === "single-click-batch") target.textContent = point.label;
 
       if (count >= CLICKS_PER_POINT) {
         target.classList.add("is-complete");
@@ -723,6 +740,13 @@
         target.disabled = true;
       } else {
         target.addEventListener("click", () => captureCalibrationPoint(point));
+      }
+
+      if (state.calibrationCapture && !measuringCenter) {
+        target.disabled = true;
+        if (state.calibrationCapture.point.id === point.id) {
+          target.classList.add("is-capturing"); target.textContent = `${count}/${CLICKS_PER_POINT}`;
+        }
       }
 
       if (measuringCenter && point.center) {
@@ -784,18 +808,46 @@
   }
 
   function captureCalibrationPoint(point) {
+    if (state.validationLocked || state.paused || state.measuring || !isCalibrationVisible() ||
+        state.calibrationCapture || (state.calibrationCounts[point.id] || 0) >= CLICKS_PER_POINT) return;
+    if (state.calibrationProtocol?.mode === "single-click-batch") {
+      state.calibrationCapture = { point, collector: new window.CalibrationSampling.PointCapture(performance.now()) };
+      renderCalibrationTargets(false);
+      setStatus("active", "校正データを収集中", `${point.label}番の点を、黄色になるまで見つめてください。顔・虹彩を検出できない間は進みません。`);
+      return;
+    }
     const stableFeatures = getStableCalibrationFeatures();
     if (!stableFeatures) {
       setStatus("error", "顔検出待ち", "顔と両目が検出されてから、もう一度クリックしてください。");
       return;
     }
 
+    appendCalibrationSample(point, stableFeatures);
+  }
+
+  function updateCalibrationCapture(features) {
+    const capture = state.calibrationCapture, frame = state.currentFrame;
+    if (!capture || !frame || state.validationLocked || state.paused) return;
+    const viewport = state.calibratedViewport;
+    if (!viewport || viewport.width !== innerWidth || viewport.height !== innerHeight || viewport.dpr !== devicePixelRatio) {
+      resetSession(); setStatus("error", "校正をやり直してください", "表示サイズが変わりました。同じ表示条件で校正し直してください。"); return;
+    }
+    const sample = capture.collector.push({ ...frame, processing_end_ms: performance.now(), valid: Boolean(features), features });
+    if (!sample) return;
+    appendCalibrationSample(capture.point, filterCalibrationFeatures(sample.rows), {
+      point_id: capture.point.id, source_frame_ids: sample.source_frame_ids,
+      capture_start_ms: sample.capture_start_ms, capture_end_ms: sample.capture_end_ms
+    });
+  }
+
+  function appendCalibrationSample(point, stableFeatures, details = {}) {
     const x = window.innerWidth * (point.x / 100);
     const y = window.innerHeight * (point.y / 100);
     state.calibrationSamples.push({
       features: stableFeatures,
       x,
-      y
+      y,
+      ...details
     });
 
     const nextCount = (state.calibrationCounts[point.id] || 0) + 1;
@@ -803,6 +855,7 @@
 
     if (nextCount === CLICKS_PER_POINT) {
       state.completedCalibrationPoints += 1;
+      state.calibrationCapture = null;
     }
 
     if (state.completedCalibrationPoints >= calibrationPoints.length) {
@@ -814,7 +867,9 @@
     }
 
     renderCalibrationTargets(false);
-    setStatus("active", "キャリブレーション中", `${point.label}番のサンプルを記録しました。顔を動かしすぎず、次の点を見てクリックしてください。`);
+    setStatus("active", "キャリブレーション中", state.calibrationCapture
+      ? `${point.label}番を収集中（${nextCount}/${CLICKS_PER_POINT}）。同じ点を見つめたままお待ちください。`
+      : `${point.label}番のサンプルを記録しました。顔を動かしすぎず、次の点を見てクリックしてください。`);
   }
 
   function updateAutoCorrection(features) {
@@ -887,7 +942,9 @@
 
   function copyCalibrationSample(sample) {
     return {
+      ...sample,
       features: sample.features.slice(),
+      ...(sample.source_frame_ids ? { source_frame_ids: sample.source_frame_ids.slice() } : {}),
       x: sample.x,
       y: sample.y
     };
@@ -897,6 +954,10 @@
     const recent = state.featureHistory.slice(-CALIBRATION_FRAME_WINDOW);
     if (recent.length < Math.min(4, CALIBRATION_FRAME_WINDOW)) return state.latestFeatures ? state.latestFeatures.slice() : null;
 
+    return filterCalibrationFeatures(recent);
+  }
+
+  function filterCalibrationFeatures(recent) {
     const mean = averageFeatureRows(recent.map((frame) => frame.features));
     const ranked = recent
       .map((frame) => ({
@@ -1001,6 +1062,7 @@
     state.measurementTimer = window.setTimeout(() => {
       state.measuring = false;
       elements.calibrationLayer.classList.add("is-hidden");
+      elements.calibrationMode.disabled = false;
       const precision = calculatePrecision(state.measurementSamples.slice(-50));
       elements.accuracyValue.textContent = `${precision}%`;
       setStatus("active", "キャリブレーション完了", `中央スコア（参考）は ${precision}% です。視角での正確度は「視角で正確度を検証」から測定してください。`);
@@ -1055,6 +1117,7 @@
   function togglePause() {
     if (state.validationLocked) return;
     state.paused = !state.paused;
+    state.calibrationCapture?.collector.resetWindow();
     elements.pauseBtn.textContent = state.paused ? "再開" : "一時停止";
     setStatus(
       state.paused ? "idle" : "active",
@@ -1066,6 +1129,9 @@
   function resetSession() {
     if (state.validationLocked) return;
     state.correctedGeneration = null;
+    state.calibrationCapture = null;
+    state.calibrationProtocol = null;
+    elements.calibrationMode.disabled = false;
     state.calibratedViewport = null;
     clearMeasurementTimer();
     state.recordingStartedAt = performance.now();
@@ -1597,7 +1663,7 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.pauseBtn,
+  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.pauseBtn,
     elements.resetBtn, elements.downloadBtn, elements.modalCalibrateBtn];
   let validationControlStates = null;
   window.trackerBridge = {
@@ -1653,6 +1719,7 @@
         five_point_correction_applied: status.correctionApplied,
         calibration_started_at: state.calibrationStartedAt, calibration_viewport: state.calibratedViewport,
         regression: state.regression, calibration_samples: state.calibrationSamples,
+        calibration_protocol: state.calibrationProtocol,
         smoothing: { minimum: SMOOTHING_MIN, maximum: SMOOTHING_MAX, deadzone_px: SMOOTHING_DEADZONE_PX,
           full_response_px: SMOOTHING_FULL_RESPONSE_PX, max_speed_px_s: MAX_GAZE_SPEED_PX_PER_SECOND,
           output: "clamped, smoothed, rounded CSS pixels" },

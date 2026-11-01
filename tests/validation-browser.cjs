@@ -25,7 +25,7 @@ const path = require('node:path');
         setOptions(){} async initialize(){} onResults(fn){this.callback=fn;}
         async send(){
           window.__fakeFrames=(window.__fakeFrames||0)+1;
-          if(window.__fakeFrames%13===0){this.callback({multiFaceLandmarks:[]});return;}
+          if(window.__dropAllFrames || window.__fakeFrames%13===0){this.callback({multiFaceLandmarks:[]});return;}
           const correction=document.querySelector('.auto-correction-target');
           let gaze=window.__gaze||{x:0.5,y:0.5};
           if(correction)gaze={x:parseFloat(correction.style.left)/100,y:parseFloat(correction.style.top)/100};
@@ -69,6 +69,8 @@ const path = require('node:path');
     await page.locator('#validationSetupClose').click();
 
     async function calibrate(withCorrection=false, headCondition='fixed') {
+      const mode = withCorrection ? 'manual-five-clicks' : 'single-click-batch';
+      await page.locator('#calibrationMode').selectOption(mode);
       await page.locator('#validationSetupBtn').click();
       await page.locator('#vHeadCondition').selectOption(headCondition);
       await page.locator('#vSession').fill('1');
@@ -83,13 +85,28 @@ const path = require('node:path');
           window.__gaze={x:parseFloat(p.style.left)/100,y:parseFloat(p.style.top)/100};
         },id);
         await page.clock.runFor(350);
-        for(let i=0;i<5;i++) await page.locator('#Pt'+id).click();
+        if(mode === 'manual-five-clicks') {
+          for(let i=0;i<5;i++) await page.locator('#Pt'+id).click();
+        } else {
+          if(id===1) await page.evaluate(()=>{window.__dropAllFrames=true;});
+          await page.locator('#Pt'+id).click();
+          if(id===1) {
+            await page.clock.runFor(1200);
+            assert.equal(await page.locator('#Pt1').innerText(),'0/5','missing faces must not complete a point');
+            await page.evaluate(()=>{window.__dropAllFrames=false;});
+          }
+          for(let i=0;i<50 && !await page.locator('#Pt'+id).evaluate(e=>e.classList.contains('is-complete'));i++) await page.clock.runFor(100);
+          assert.equal(await page.locator('#Pt'+id).evaluate(e=>e.classList.contains('is-complete')),true);
+        }
       }
       assert.equal(await page.locator('#validationRunBtn').isDisabled(),true);
       await page.clock.runFor(5300);
       assert.equal(await page.locator('#validationRunBtn').isEnabled(),true,await page.locator('#validationStatus').innerText());
       assert.equal(await page.evaluate(()=>trackerBridge.status().correctionApplied),false);
       if(withCorrection) {
+        const manualSnapshot=await page.evaluate(()=>{const s=trackerBridge.acquire();trackerBridge.release();return s;});
+        assert.deepEqual(manualSnapshot.regression,snapshot.regression,'the same synthetic fixation data must keep the same regression in both modes');
+        assert.equal(manualSnapshot.calibration_protocol.mode,'manual-five-clicks');
         await page.locator('#correctionBtn').click();
         assert.equal(await page.locator('#validationRunBtn').isDisabled(),true);
         await page.clock.runFor(17500);
@@ -99,6 +116,9 @@ const path = require('node:path');
     }
     await calibrate();
     const snapshot=await page.evaluate(()=>{const s=trackerBridge.acquire();trackerBridge.release();return s;});
+    assert.equal(snapshot.calibration_protocol.mode,'single-click-batch');
+    assert.equal(snapshot.calibration_samples.length,45);
+    assert.equal(new Set(snapshot.calibration_samples.flatMap(s=>s.source_frame_ids)).size,360);
     // Leaving fullscreen before the run must not leave Start permanently disabled.
     await page.evaluate(()=>document.exitFullscreen());
     await page.clock.runFor(100);

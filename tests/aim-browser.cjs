@@ -49,6 +49,7 @@ const fs=require('node:fs'), os=require('node:os'), path=require('node:path');
     assert((await page.locator('#aimSetupError').innerText()).includes('カメラ'));
     await page.locator('#aimSetupClose').click(); await page.locator('#startBtn').click(); await page.clock.runFor(500);
     async function calibrate(head='fixed') {
+      await page.locator('#calibrationMode').selectOption('manual-five-clicks');
       await page.locator('#aimSetupBtn').click();
       await page.locator('#aHead').selectOption(head); await page.locator('#aConfirmed').check();
       await page.locator('#aCount').fill('3'); await page.locator('#aSeed').fill('42');

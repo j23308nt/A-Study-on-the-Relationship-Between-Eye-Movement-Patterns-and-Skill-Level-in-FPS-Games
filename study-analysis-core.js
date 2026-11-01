@@ -118,7 +118,8 @@
       device_pixel_ratio: m.device_pixel_ratio, screen_css: m.browser_screen_css, screen_pixels: m.declared_screen_pixels,
       os_scale: m.os_scale_note, zoom: m.browser_zoom_note, environment: m.environment_notes, user_agent: m.user_agent,
       camera: m.tracker?.camera_label, camera_settings: m.tracker?.camera_settings, smoothing: m.tracker?.smoothing,
-      five_point_correction_applied: m.tracker?.five_point_correction_applied, source_sha256: m.source_sha256,
+      five_point_correction_applied: m.tracker?.five_point_correction_applied,
+      calibration_protocol: m.tracker?.calibration_protocol ?? null, source_sha256: m.source_sha256,
       angular_error_reference: m.angular_error_reference, render_gap_abort_ms: m.render_gap_abort_ms,
       task: run.kind === "aim" ? { trial_count: m.trial_count, diameter_px: m.target_diameter_px, timeout_ms: m.timeout_ms,
         seed: m.seed, inter_target_gap_ms: m.inter_target_gap_ms, response_clock: m.response_clock, cursor_recording: m.cursor_recording } :

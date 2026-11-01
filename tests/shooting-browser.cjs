@@ -90,7 +90,9 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       for (const id of [1, 2, 3, 4, 6, 7, 8, 9, 5]) {
         await page.evaluate(id => { const p = document.getElementById('Pt' + id); window.__gaze = { x: parseFloat(p.style.left) / 100, y: parseFloat(p.style.top) / 100 }; }, id);
         await page.clock.runFor(350);
-        for (let i = 0; i < 5; i++) await page.locator('#Pt' + id).click();
+        await page.locator('#Pt' + id).click();
+        for (let i = 0; i < 50 && !await page.locator('#Pt' + id).evaluate(e => e.classList.contains('is-complete')); i++) await page.clock.runFor(100);
+        assert.equal(await page.locator('#Pt' + id).evaluate(e => e.classList.contains('is-complete')), true);
       }
       await page.clock.runFor(5500);
       await page.clock.runFor(9500);
@@ -139,6 +141,9 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     assert(complete.frames.length > 1000); assert(complete.gaze.some(g => !g.valid));
     assert(complete.targets.some(t => t.status === 'unfinished'));
     assert(complete.metadata.quality.complete); assert(complete.metadata.source_sha256['shooting.mjs']);
+    assert.equal(complete.metadata.tracker.calibration_protocol.mode, 'single-click-batch');
+    assert.equal(complete.metadata.tracker.calibration_samples.length, 45);
+    assert.equal(new Set(complete.metadata.tracker.calibration_samples.flatMap(s => s.source_frame_ids)).size, 360);
     assert(complete.gaze.some(g => g.target_id && g.rendered_frame_id));
     assert(complete.frames.filter(f => f.target_visible).every(f => f.in_view));
     failSave = false; await page.locator('#shootingSaveBtn').click();

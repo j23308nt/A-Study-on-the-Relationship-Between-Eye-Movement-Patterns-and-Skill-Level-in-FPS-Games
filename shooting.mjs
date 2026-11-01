@@ -44,7 +44,7 @@ function readiness() {
   }
 }
 async function hashes() {
-  const names = ['app.js', 'validation-core.js', 'shooting-core.js', 'shooting.mjs', 'shooting-scene.mjs', 'index.html', 'shooting.css',
+  const names = ['app.js', 'calibration-core.js', 'validation-core.js', 'shooting-core.js', 'shooting.mjs', 'shooting-scene.mjs', 'index.html', 'shooting.css',
     'sites/pistol-range/dist/vendor/three.module.js', 'sites/pistol-range/dist/vendor/three.core.js',
     'shooting-storage.mjs', 'mediapipe/face_mesh/face_mesh.js', 'mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.data'];
   const entries = await Promise.all(names.map(async name => {
@@ -87,7 +87,7 @@ el('shootingForm').onsubmit = async event => {
     prepared = config; quality = null; qualityTracker = null;
     el('shootingPrecisionAccepted').checked = false; el('shootingPrecisionAccepted').disabled = true;
     el('shootingSetup').close(); phase = 'calibrating';
-    set('shootingStatus', '9点を各5回クリックしてください。中央の5秒測定後に正確度確認へ進みます。');
+    set('shootingStatus', '選択した操作で9点を校正してください。1クリック方式では黄色になるまで同じ点を見つめます。中央の5秒測定後に正確度確認へ進みます。');
   } catch (error) { phase = 'idle'; set('shootingSetupError', error.message); }
   finally { el('shootingPrepareBtn').disabled = false; readiness(); }
 };

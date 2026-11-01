@@ -34,6 +34,14 @@
           <button id="resetBtn" type="button" disabled>リセット</button>
         </section>
 
+        <label class="calibration-options">次の校正の操作
+          <select id="calibrationMode">
+            <option value="single-click-batch">1点1クリック・自動収集（計9回）</option>
+            <option value="manual-five-clicks">従来の1点5クリック（計45回）</option>
+          </select>
+          <span>1回押したら、点が黄色になるまで見つめてください。</span>
+        </label>
+
         <section class="validation-controls shooting-controls" aria-label="3D射撃の視線研究">
           <h2>3D射撃・視線計測</h2>
           <a id="shootingPlayOnlyBtn" class="shooting-play-only" href="sites/pistol-range/dist/index.html">計測なしで3D射撃</a>
@@ -129,7 +137,7 @@
     <div class="calibration-modal is-hidden" id="calibrationModal" role="dialog" aria-modal="true" aria-labelledby="calibrationTitle">
       <div class="calibration-dialog">
         <h2 id="calibrationTitle">Calibration</h2>
-        <p>画面上の9つの点を見ながらクリックします。各点は5回クリックすると黄色になります。最後に中央の点を5秒見て、参考用の中央スコアを測定します。視角での正確度は別の検証機能で評価します。</p>
+        <p>画面上の9つの点を見ながらクリックします。「1点1クリック」では、1回押した後、点が黄色になるまで見つめてください。各点で新しい映像フレームから5サンプルを自動収集します。従来の5回クリック方式も選べます。最後に中央の点を5秒見て、参考用の中央スコアを測定します。視角での正確度は別の検証機能で評価します。</p>
         <button class="primary" id="modalCalibrateBtn" type="button">Calibrate</button>
       </div>
     </div>
@@ -294,6 +302,7 @@
     </dialog>
 
     <script src="mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="calibration-core.js"></script>
     <script src="app.js"></script>
     <script src="validation-core.js"></script>
     <script src="validation.js"></script>

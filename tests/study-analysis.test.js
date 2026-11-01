@@ -26,7 +26,8 @@ test('head, correction, task, seed, camera, environment and code differences are
   const base=F.aim();
   for(const mutate of [d=>d.metadata.head_condition='free',d=>d.metadata.tracker.five_point_correction_applied=true,
     d=>d.metadata.seed=43,d=>d.metadata.target_diameter_px=50,d=>d.metadata.tracker.camera_label='different',
-    d=>d.metadata.environment_notes='different',d=>d.metadata.source_sha256={'app.js':'changed'}]) {
+    d=>d.metadata.environment_notes='different',d=>d.metadata.source_sha256={'app.js':'changed'},
+    d=>d.metadata.tracker.calibration_protocol={mode:'single-click-batch'}]) {
     const other=structuredClone(base);other.metadata.run_id='other'; other.metadata.session_number=2; mutate(other);
     assert.equal(S.groups([S.normalize(base),S.normalize(other)]).length,2);
   }

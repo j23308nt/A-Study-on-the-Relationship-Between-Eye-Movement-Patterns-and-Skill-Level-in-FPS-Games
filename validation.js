@@ -37,7 +37,7 @@
 
   async function hashes() {
     const result = {};
-    for (const name of ["app.js", "validation-core.js", "validation.js", "index.html", "styles.css"]) {
+    for (const name of ["app.js", "calibration-core.js", "validation-core.js", "validation.js", "index.html", "styles.css"]) {
       const response = await fetch(name, { cache: "no-store" });
       if (!response.ok) throw new Error(`コード版を確認できません: ${name}`);
       const digest = await crypto.subtle.digest("SHA-256", await response.arrayBuffer());
@@ -333,6 +333,7 @@
         angular_error_reference: r.metadata.angular_error_reference,
         dpr: r.metadata.device_pixel_ratio, camera: r.metadata.tracker?.camera_label, camera_settings: r.metadata.tracker?.camera_settings,
         five_point_correction_applied: r.metadata.tracker?.five_point_correction_applied,
+        calibration_protocol: r.metadata.tracker?.calibration_protocol ?? null,
         smoothing: r.metadata.tracker?.smoothing, source: r.metadata.source_sha256, os_scale: r.metadata.os_scale_note,
         zoom: r.metadata.browser_zoom_note, environment: r.metadata.environment_notes }));
       if (new Set(conditions).size !== 1) return `${id}: 条件またはコード版が異なるため、範囲を集計しません`;

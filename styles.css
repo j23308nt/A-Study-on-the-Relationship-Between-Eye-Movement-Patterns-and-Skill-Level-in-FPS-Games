@@ -640,6 +640,11 @@ body.validation-active .app-shell, body.validation-active .camera-preview, body.
   opacity: 1;
 }
 
+.calibration-options { display: grid; gap: 5px; font-size: 12px; }
+.calibration-options select { width: 100%; font: inherit; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
+.calibration-options span { color: var(--muted); line-height: 1.5; }
+.calibration-target.is-capturing { background: #0b7a75; color: #fff; opacity: 1; font-size: 13px; cursor: wait; }
+
 .correction-target {
   background: #7c3aed;
   box-shadow: 0 0 0 10px rgba(124, 58, 237, 0.14), 0 10px 30px rgba(91, 33, 182, 0.22);
