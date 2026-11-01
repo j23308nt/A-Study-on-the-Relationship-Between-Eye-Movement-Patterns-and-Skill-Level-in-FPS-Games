@@ -76,7 +76,7 @@ el('shootingForm').onsubmit = async event => {
       mouse_dpi: Number(el('sDpi').value), sensitivity_rad_per_mouse_px: Number(el('sSensitivity').value), seed: Number(el('sSeed').value), notes: el('sNotes').value,
       viewport_width: innerWidth, viewport_height: innerHeight, device_pixel_ratio: devicePixelRatio,
       source_sha256: await hashes(), user_agent: navigator.userAgent, duration_ms: C.DURATION, target_radius_world: .42, fov_vertical_deg: 65,
-      placement_policy: 'seeded camera-relative visible candidates, constrained to the room; realized world positions depend on camera pose',
+      placement_policy: 'seeded camera-relative visible candidates, constrained to the room and reachable camera yaw/pitch; deterministic constrained fallback; realized world positions depend on camera pose',
       coordinate_space: 'CSS pixels in the fullscreen viewport; game world coordinates are separate',
       clocks: 'all software event and render timestamps use performance.now; camera video time is retained separately; no exposure/photon synchronization',
       target_onset_definition: 'first renderer.render return time (CPU submission end); not measured photon onset',

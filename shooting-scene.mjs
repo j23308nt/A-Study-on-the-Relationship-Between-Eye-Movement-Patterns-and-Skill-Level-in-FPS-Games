@@ -1,5 +1,7 @@
 import * as THREE from './sites/pistol-range/dist/vendor/three.module.js';
 
+const LOOK_LIMITS = { minYaw: -.85, maxYaw: .85, minPitch: -.45, maxPitch: .5 };
+
 export function createShootingScene(canvas, width, height) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -98,11 +100,23 @@ export function createShootingScene(canvas, width, height) {
   return {
     reset() { camera.rotation.set(0, 0, 0); recoil = 0; target.visible = false; },
     look(dx, dy, sensitivity) {
-      camera.rotation.y = THREE.MathUtils.clamp(camera.rotation.y - dx * sensitivity, -.85, .85);
-      camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x - dy * sensitivity, -.45, .5);
+      camera.rotation.y = THREE.MathUtils.clamp(camera.rotation.y - dx * sensitivity, LOOK_LIMITS.minYaw, LOOK_LIMITS.maxYaw);
+      camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x - dy * sensitivity, LOOK_LIMITS.minPitch, LOOK_LIMITS.maxPitch);
     },
     newTarget(random, first = false) {
       camera.updateMatrixWorld();
+      const candidate = (u, v, depth) => {
+        const h = Math.tan(camera.fov * Math.PI / 360) * depth;
+        const point = new THREE.Vector3((u * 2 - 1) * h * width / height, (1 - v * 2) * h, -depth)
+          .applyQuaternion(camera.quaternion).add(camera.position);
+        if (point.y < .55 || point.y > 6.6 || Math.abs(point.x) > 11.8 || point.z < -16.3 || point.z > -.8) return null;
+        // Being visible is not enough: the camera must be able to aim at the center.
+        const offset = point.clone().sub(camera.position);
+        const yaw = Math.atan2(-offset.x, -offset.z);
+        const pitch = Math.atan2(offset.y, Math.hypot(offset.x, offset.z));
+        if (yaw < LOOK_LIMITS.minYaw || yaw > LOOK_LIMITS.maxYaw || pitch < LOOK_LIMITS.minPitch || pitch > LOOK_LIMITS.maxPitch) return null;
+        return point;
+      };
       let point;
       for (let i = 0; i < 300; i++) {
         const u = first ? .5 : .18 + random() * .64;
@@ -110,11 +124,20 @@ export function createShootingScene(canvas, width, height) {
         if (!first && u > .63 && v > .56) continue;
         if (!first && Math.hypot(u - .5, v - .5) < .17) continue;
         const depth = first ? 12.3 : 10.8 + random() * 3.2;
-        const h = Math.tan(camera.fov * Math.PI / 360) * depth;
-        point = new THREE.Vector3((u * 2 - 1) * h * width / height, (1 - v * 2) * h, -depth)
-          .applyQuaternion(camera.quaternion).add(camera.position);
-        if (point.y >= .55 && point.y <= 6.6 && Math.abs(point.x) <= 11.8 && point.z >= -16.3 && point.z <= -.8) break;
-        point = null;
+        point = candidate(u, v, depth);
+        if (point) break;
+      }
+      // Keep the same constraints when random candidates are exhausted at a limit.
+      if (!point) {
+        fallback: for (const v of [.2, .35, .5, .65]) {
+          for (const u of [.5, .45, .55, .35, .6, .65, .2, .8]) {
+            if (u > .63 && v > .56 || Math.hypot(u - .5, v - .5) < .17) continue;
+            for (const depth of [10.8, 12.4, 14]) {
+              point = candidate(u, v, depth);
+              if (point) break fallback;
+            }
+          }
+        }
       }
       if (!point) throw Error('表示可能な球の位置を作成できません。');
       target.position.copy(point); target.visible = true; target.updateMatrixWorld();
