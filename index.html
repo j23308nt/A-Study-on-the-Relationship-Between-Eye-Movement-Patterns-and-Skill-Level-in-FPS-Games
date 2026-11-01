@@ -45,7 +45,7 @@
         <section class="validation-controls shooting-controls" aria-label="3D射撃の視線研究">
           <h2>3D射撃・視線計測</h2>
           <a id="shootingPlayOnlyBtn" class="shooting-play-only" href="sites/pistol-range/dist/index.html">計測なしで3D射撃</a>
-          <p id="shootingStatus" aria-live="polite">条件入力から校正・正確度確認へ進みます。</p>
+          <p id="shootingStatus" aria-live="polite">「1」からカメラ起動・9点校正・正確度確認まで進めます。事前の校正は不要です。</p>
           <button id="shootingSetupBtn" type="button">1. 条件入力・9点校正</button>
           <button id="shootingCheckBtn" type="button" disabled>2. 正確度を再確認（約9秒）</button>
           <label class="shooting-review"><input id="shootingPrecisionAccepted" type="checkbox" disabled>正確度の結果を確認しました</label>
@@ -280,7 +280,7 @@
           <label>乱数シード<input id="sSeed" type="number" min="0" max="4294967295" value="42" required></label>
           <label class="validation-wide">照明・OS拡大率・ブラウザ倍率・特記事項<textarea id="sNotes" rows="2" maxlength="1500"></textarea></label>
         </fieldset>
-        <p>全画面で9点校正後、5位置の正確度を自動確認します。5点補正は準備画面から任意で実施でき、実施後は正確度を再確認します。</p>
+        <p>事前に上の「開始」「キャリブレーション」を実行する必要はありません。この画面からカメラを起動し、全画面で9点校正後、5位置の正確度を自動確認します。結果を確認してチェックすると「3. 射撃と計測を開始」が使えます。5点補正は準備画面から任意で実施でき、実施後は正確度を再確認します。</p>
         <label class="validation-check"><input id="sConfirmed" type="checkbox" required>頭部条件・画面・距離を準備し、校正から課題終了まで同じ条件で実施します。</label>
         <p id="shootingSetupError" role="alert"></p>
         <button id="shootingPrepareBtn" class="primary" type="submit">カメラ開始・全画面で校正</button>

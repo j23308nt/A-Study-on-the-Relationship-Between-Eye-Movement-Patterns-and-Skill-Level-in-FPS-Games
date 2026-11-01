@@ -83,6 +83,9 @@ el('shootingForm').onsubmit = async event => {
       gaze_association: 'last submitted render at gaze processing start; exclude >200ms stale render and gaze processing crossing target end',
       render_stall_abort_ms: 250, head_position_confirmed: true };
     if (document.fullscreenElement !== document.documentElement || document.hidden) throw Error('全画面にして準備し直してください。');
+    // Camera startup and hash fetches can span the initial fullscreen resize.
+    // Capture the same viewport that bridge.prepare() uses for calibration.
+    Object.assign(config, { viewport_width: innerWidth, viewport_height: innerHeight, device_pixel_ratio: devicePixelRatio });
     bridge.prepare(); config.generation = bridge.status().generation;
     prepared = config; quality = null; qualityTracker = null;
     el('shootingPrecisionAccepted').checked = false; el('shootingPrecisionAccepted').disabled = true;
@@ -148,7 +151,7 @@ async function finishQuality(reason = '') {
       p95_error_px: C.percentile(samples.filter(f => f.analysis_valid).map(f => f.error_px)), points, samples,
       tracker_signature: signature(qualityTracker) };
     el('shootingPrecisionAccepted').disabled = !quality.complete;
-    set('shootingStatus', quality.complete ? `正確度確認：位置平均の平均 ${fmt(quality.mean_error_deg)}°、誤差95%点 ${fmt(quality.p95_error_px)} CSS px。研究条件として適切か確認してください。` : '正確度確認が中断、またはサンプル不足でした。正確度を再確認してください。');
+    set('shootingStatus', quality.complete ? `正確度確認：位置平均の平均 ${fmt(quality.mean_error_deg)}°、誤差95%点 ${fmt(quality.p95_error_px)} CSS px。研究条件として適切か確認し、「正確度の結果を確認しました」にチェックすると「3. 射撃と計測を開始」が使えます。` : '正確度確認が中断、またはサンプル不足でした。正確度を再確認してください。');
   } finally {
     qualityDraining = false; bridge.release(); document.body.classList.remove('shooting-measuring'); phase = 'prepared'; readiness();
   }

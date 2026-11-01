@@ -18,6 +18,17 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, screen: { width: 1000, height: 760 }, acceptDownloads: true });
     const errors = [], payloads = []; let failSave = true;
+    let pendingStartupResize = true;
+    await page.route('**/calibration-core.js', async route => {
+      if (pendingStartupResize && route.request().resourceType() === 'fetch') {
+        pendingStartupResize = false;
+        await page.evaluate(() => {
+          Object.defineProperty(window, 'innerWidth', window.__startupWidthDescriptor);
+          delete window.__startupWidthDescriptor;
+        });
+      }
+      await route.continue();
+    });
     page.on('pageerror', error => { errors.push(error.message); console.error('PAGE', error.message); });
     await page.route('**/save-shooting', async route => {
       const payload = route.request().postDataJSON(); payloads.push(payload);
@@ -84,6 +95,17 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       };
     });
     async function prepare() {
+      if (pendingStartupResize) {
+        const initial = await page.evaluate(() => trackerBridge.status());
+        assert.equal(initial.running, false, 'first preparation must start its own camera');
+        assert.equal(initial.ready, false, 'no separate calibration may be required');
+        assert.equal(initial.generation, 0);
+        await page.evaluate(() => {
+          window.__startupWidthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+          const initialWidth = innerWidth;
+          Object.defineProperty(window, 'innerWidth', { configurable: true, get: () => initialWidth - 32 });
+        });
+      }
       await page.locator('#shootingSetupBtn').click(); await page.locator('#sConfirmed').check();
       await page.locator('#shootingPrepareBtn').click(); await page.clock.runFor(100);
       await page.waitForFunction(() => !document.getElementById('shootingSetup').open, null, { polling: 20 });
@@ -96,6 +118,7 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       }
       await page.clock.runFor(5500);
       await page.clock.runFor(9500);
+      assert.equal(await page.locator('#shootingCheckBtn').isEnabled(), true, await page.locator('#shootingStatus').innerText());
       await page.waitForFunction(() => !document.getElementById('shootingPrecisionAccepted').disabled, null, { polling: 20 });
       assert((await page.locator('#shootingStatus').innerText()).includes('正確度確認'));
       await page.locator('#shootingPrecisionAccepted').check();
@@ -141,6 +164,9 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     assert(complete.frames.length > 1000); assert(complete.gaze.some(g => !g.valid));
     assert(complete.targets.some(t => t.status === 'unfinished'));
     assert(complete.metadata.quality.complete); assert(complete.metadata.source_sha256['shooting.mjs']);
+    assert.equal(complete.metadata.viewport_width, complete.metadata.tracker.calibration_viewport.width);
+    assert.equal(complete.metadata.viewport_height, complete.metadata.tracker.calibration_viewport.height);
+    assert.equal(complete.metadata.device_pixel_ratio, complete.metadata.tracker.calibration_viewport.dpr);
     assert.equal(complete.metadata.tracker.calibration_protocol.mode, 'single-click-batch');
     assert.equal(complete.metadata.tracker.calibration_samples.length, 45);
     assert.equal(new Set(complete.metadata.tracker.calibration_samples.flatMap(s => s.source_frame_ids)).size, 360);
