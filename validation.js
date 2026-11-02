@@ -37,7 +37,7 @@
 
   async function hashes() {
     const result = {};
-    for (const name of ["app.js", "calibration-core.js", "validation-core.js", "validation.js", "index.html", "styles.css"]) {
+    for (const name of ["app.js", "calibration-core.js", "validation-core.js", "validation.js", "index.html", "styles.css", ...bridge.assetPaths()]) {
       const response = await fetch(name, { cache: "no-store" });
       if (!response.ok) throw new Error(`コード版を確認できません: ${name}`);
       const digest = await crypto.subtle.digest("SHA-256", await response.arrayBuffer());
@@ -246,7 +246,7 @@
       render_stall_over_250ms: "描画が250ms以上停止しました" };
     const stateLabel = s.status === "completed" ? (s.data_complete ? "完了" : "完了・欠測あり")
       : `中断：${reasons[bundle.metadata.stop_reason] || "検証が途中で終了しました"}`;
-    text("validationSummary", `${bundle.metadata.participant_id} / ${headLabel(bundle.metadata.head_condition)} / セッション${bundle.metadata.session_number} — ${stateLabel}。全位置・全試行が揃った平均誤差：${number(s.mean_error_deg)}°。完了試行 ${s.trials.filter(t => t.status === "completed").length}/27。`);
+    text("validationSummary", `${bundle.metadata.participant_id} / ${bundle.metadata.tracker?.engine?.label || "方式記録なし"} / ${headLabel(bundle.metadata.head_condition)} / セッション${bundle.metadata.session_number} — ${stateLabel}。全位置・全試行が揃った平均誤差：${number(s.mean_error_deg)}°。完了試行 ${s.trials.filter(t => t.status === "completed").length}/27。`);
     text("validationAngleNote", bundle.metadata.head_condition === "free" ? freeAngleNote : "角度は入力距離と画面中央正面の目の位置を前提に計算しています。");
     const body = el("validationPositionRows"); body.replaceChildren();
     s.positions.forEach(p => {
@@ -317,16 +317,16 @@
     const body = el("validationCompareRows"); body.replaceChildren();
     rows.forEach(data => {
       const tr = document.createElement("tr");
-      [data.metadata.participant_id, headLabel(data.metadata.head_condition), data.metadata.session_number, data.summary.data_complete ? "完了" : "不完全・中断",
-        number(data.summary.mean_error_deg), data.metadata.run_id].forEach(value => {
+      [data.metadata.participant_id, data.metadata.tracker?.engine?.label || "方式記録なし", headLabel(data.metadata.head_condition), data.metadata.session_number, data.summary.data_complete ? "完了" : "不完全・中断",
+        number(data.summary.mean_error_deg), number(data.summary.raw_mean_error_deg), data.metadata.run_id].forEach(value => {
         const td = document.createElement("td"); td.textContent = String(value); tr.appendChild(td);
       });
       body.appendChild(tr);
     });
-    const groupKey = r => JSON.stringify([r.metadata.participant_id, r.metadata.head_condition ?? null]);
+    const groupKey = r => JSON.stringify([r.metadata.participant_id, r.metadata.head_condition ?? null, r.metadata.tracker?.engine?.id ?? null]);
     const reports = [...new Set(rows.map(groupKey))].map(key => {
       const participant = rows.filter(r => groupKey(r) === key);
-      const id = `${participant[0].metadata.participant_id} / ${headLabel(participant[0].metadata.head_condition)}`;
+      const id = `${participant[0].metadata.participant_id} / ${participant[0].metadata.tracker?.engine?.label || "方式記録なし"} / ${headLabel(participant[0].metadata.head_condition)}`;
       const sessionIds = participant.map(r => r.metadata.session_number);
       if (new Set(sessionIds).size !== sessionIds.length) return `${id}: 同じ回の複数実行があります。自動統合しません`;
       const conditions = participant.map(r => JSON.stringify({ geometry: r.metadata.geometry, vision: r.metadata.vision,
@@ -334,6 +334,7 @@
         dpr: r.metadata.device_pixel_ratio, camera: r.metadata.tracker?.camera_label, camera_settings: r.metadata.tracker?.camera_settings,
         five_point_correction_applied: r.metadata.tracker?.five_point_correction_applied,
         calibration_protocol: r.metadata.tracker?.calibration_protocol ?? null,
+        engine: r.metadata.tracker?.engine ?? null,
         smoothing: r.metadata.tracker?.smoothing, source: r.metadata.source_sha256, os_scale: r.metadata.os_scale_note,
         zoom: r.metadata.browser_zoom_note, environment: r.metadata.environment_notes }));
       if (new Set(conditions).size !== 1) return `${id}: 条件またはコード版が異なるため、範囲を集計しません`;

@@ -34,6 +34,14 @@
           <button id="resetBtn" type="button" disabled>リセット</button>
         </section>
 
+        <label class="calibration-options">視線の計測方式
+          <select id="trackerEngine">
+            <option value="mediapipe-ridge">現行方式</option>
+            <option value="gazefollower2">GazeFollower2（比較用）</option>
+          </select>
+          <span id="trackerEngineNote">切り替え後は9点校正をやり直してください。同じ条件で正確度を比較できます。</span>
+        </label>
+
         <label class="calibration-options">次の校正の操作
           <select id="calibrationMode">
             <option value="single-click-batch">1点1クリック・自動収集（計9回）</option>
@@ -200,8 +208,8 @@
       <section class="validation-comparison">
         <h3>セッションを比較</h3>
         <label>保存した session.json を複数選択<input id="validationCompareInput" type="file" accept=".json,application/json" multiple></label>
-        <p id="validationCompareStatus" aria-live="polite">頭部条件ごとに3セッションを並べて確認できます。非固定の角度は開始位置・距離に基づく参考値です。</p>
-        <div class="validation-table-wrap"><table class="validation-table"><thead><tr><th>参加者</th><th>頭部条件</th><th>回</th><th>状態</th><th>平均誤差 (°)</th><th>実行ID</th></tr></thead><tbody id="validationCompareRows"></tbody></table></div>
+        <p id="validationCompareStatus" aria-live="polite">両方式の全記録JSONを選ぶと、正確度を並べて比較できます。小さい誤差ほど正確です。方式ごとに集計し、非固定の角度は参考値です。</p>
+        <div class="validation-table-wrap"><table class="validation-table"><thead><tr><th>参加者</th><th>計測方式</th><th>頭部条件</th><th>回</th><th>状態</th><th>平均誤差 (°)</th><th>平滑化前の平均誤差 (°)</th><th>実行ID</th></tr></thead><tbody id="validationCompareRows"></tbody></table></div>
       </section>
     </dialog>
 
@@ -303,6 +311,7 @@
 
     <script src="mediapipe/face_mesh/face_mesh.js"></script>
     <script src="calibration-core.js"></script>
+    <script src="tracker-backends.js"></script>
     <script src="app.js"></script>
     <script src="validation-core.js"></script>
     <script src="validation.js"></script>

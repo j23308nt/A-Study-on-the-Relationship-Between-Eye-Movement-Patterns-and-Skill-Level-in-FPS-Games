@@ -1,0 +1,49 @@
+{
+  "upstream": "https://github.com/GanchengZhu/GazeFollower2",
+  "commit": "106b4012bb2b3f2ca7e473e034fc3ad0a4ceb5a0",
+  "license": "CC-BY-NC-SA-4.0",
+  "integration": "GazeNet_Next features + upstream FaceAlignment; existing FaceMesh landmarks and common calibration; not the full upstream SDK",
+  "onnxruntime_web_version": "1.22.0",
+  "files": [
+    {
+      "path": "vendor/gazefollower2/FaceAlignment.mjs",
+      "sha256": "f37808b16b37128e43a2a2bdea5771380f4e35b86538bc6cf9701ad60273498c",
+      "bytes": 6041
+    },
+    {
+      "path": "vendor/gazefollower2/GazeNet_Next.onnx",
+      "sha256": "5f635713b50134163545d1eb76868610253c4fadc467dd5c4f69bd271610b69e",
+      "bytes": 8006908
+    },
+    {
+      "path": "vendor/gazefollower2/LICENSE",
+      "sha256": "6bf9d3232d2005ea20206a09dc620fa1e8afb2231382a2d8845c9aac00bf5328",
+      "bytes": 2112
+    },
+    {
+      "path": "vendor/onnxruntime/LICENSE",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "bytes": 1073
+    },
+    {
+      "path": "vendor/onnxruntime/ort-wasm-simd-threaded.mjs",
+      "sha256": "30dd851d9c00622940500f71ddd2ff8820c5cb65270816080175b958705385a8",
+      "bytes": 20856
+    },
+    {
+      "path": "vendor/onnxruntime/ort-wasm-simd-threaded.wasm",
+      "sha256": "71aef04959c5c1b6de461b6538e2058e306610034a85aad2742d0c7fd4533fe4",
+      "bytes": 11210254
+    },
+    {
+      "path": "vendor/onnxruntime/ort.wasm.min.mjs",
+      "sha256": "6ef726f355b791129f7ddf3f62e7877a16b9b777abe87004b8ab306e6b9cf265",
+      "bytes": 48259
+    },
+    {
+      "path": "vendor/onnxruntime/ThirdPartyNotices.txt",
+      "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc",
+      "bytes": 326866
+    }
+  ]
+}

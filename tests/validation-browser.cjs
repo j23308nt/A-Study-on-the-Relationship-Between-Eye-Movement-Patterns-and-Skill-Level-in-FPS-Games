@@ -55,6 +55,7 @@ const path = require('node:path');
     await page.clock.install();
     await page.clock.pauseAt(new Date(Date.now()+1000));
     await page.goto(process.env.VALIDATION_URL || 'http://localhost:8000/');
+    await require('./tracker-mocks.cjs').configureTracker(page);
     await page.locator('#validationSetupBtn').click();
     await page.screenshot({path:path.join(artifacts,'setup-desktop.png')});
     await page.locator('#vPositionConfirmed').check();
@@ -117,6 +118,7 @@ const path = require('node:path');
     await calibrate();
     const snapshot=await page.evaluate(()=>{const s=trackerBridge.acquire();trackerBridge.release();return s;});
     assert.equal(snapshot.calibration_protocol.mode,'single-click-batch');
+    assert.equal(snapshot.engine.id,process.env.TEST_TRACKER_ENGINE || 'mediapipe-ridge');
     assert.equal(snapshot.calibration_samples.length,45);
     assert.equal(new Set(snapshot.calibration_samples.flatMap(s=>s.source_frame_ids)).size,360);
     // Leaving fullscreen before the run must not leave Start permanently disabled.
@@ -216,6 +218,7 @@ const path = require('node:path');
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({result:'PASS',checks:['Start opens missing setup','Start restores fullscreen','completed run requires fresh setup','9-point calibration without correction','optional 5-point correction','head condition selection/metadata/comparison','automatic fullscreen exit','Escape closes and reopens results','correction mode metadata/comparison','27 trials','frozen regression','failed frames','fullscreen interruption','save retry','JSON download','comparison','responsive layout'],artifacts}));
   } catch(error) {
+    console.error('Run diagnostics:',bundles.map(b=>({reason:b.metadata.stop_reason,status:b.summary.status})),await page.locator('#validationStatus').innerText());
     await page.screenshot({path:path.join(artifacts,'failure.png')}).catch(()=>{});
     console.error('Artifacts:',artifacts);
     throw error;

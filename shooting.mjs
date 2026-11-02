@@ -26,7 +26,7 @@ function isolateShootingInput(active) {
   document.body.classList.toggle('shooting-playing', active);
 }
 const sameView = () => prepared && prepared.viewport_width === innerWidth && prepared.viewport_height === innerHeight && prepared.device_pixel_ratio === devicePixelRatio;
-const signature = snapshot => JSON.stringify([snapshot.calibration_generation, snapshot.regression, snapshot.five_point_correction_applied]);
+const signature = snapshot => JSON.stringify([snapshot.calibration_generation, snapshot.regression, snapshot.five_point_correction_applied, snapshot.engine ?? null]);
 const modalBusy = () => ['preparing', 'calibrating', 'checking', 'starting', 'running', 'finishing'].includes(phase) || saving;
 
 function readiness() {
@@ -46,7 +46,7 @@ function readiness() {
 async function hashes() {
   const names = ['app.js', 'calibration-core.js', 'validation-core.js', 'shooting-core.js', 'shooting.mjs', 'shooting-scene.mjs', 'index.html', 'shooting.css',
     'sites/pistol-range/dist/vendor/three.module.js', 'sites/pistol-range/dist/vendor/three.core.js',
-    'shooting-storage.mjs', 'mediapipe/face_mesh/face_mesh.js', 'mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.data'];
+    'shooting-storage.mjs', 'mediapipe/face_mesh/face_mesh.js', 'mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.data', ...bridge.assetPaths()];
   const entries = await Promise.all(names.map(async name => {
     const response = await fetch(name, { cache: 'no-store' });
     if (!response.ok) throw Error(`コード版を取得できません：${name}`);
@@ -287,7 +287,7 @@ async function finish(reason = '') {
 }
 function renderResult() {
   const s = bundle.summary;
-  set('shootingSummary', `${s.status === 'completed' ? '完了' : `中断：${bundle.metadata.stop_reason}`}。命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}。命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}、最大処理間隔 ${fmt(s.max_gaze_gap_ms)} ms。`);
+  set('shootingSummary', `${bundle.metadata.tracker?.engine?.label || '方式記録なし'} / ${s.status === 'completed' ? '完了' : `中断：${bundle.metadata.stop_reason}`}。命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}。命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}、最大処理間隔 ${fmt(s.max_gaze_gap_ms)} ms。`);
   el('shootingAnalysisLink').href = `shooting-analysis.html?run=${encodeURIComponent(bundle.metadata.run_id)}`;
 }
 async function save() {

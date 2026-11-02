@@ -1,0 +1,2 @@
+# Preserve bundled upstream assets byte-for-byte, including their recorded hashes.
+vendor/** -text -whitespace

@@ -37,11 +37,20 @@
     calibrationLayer: document.getElementById("calibrationLayer"),
     calibrationModal: document.getElementById("calibrationModal"),
     calibrationMode: document.getElementById("calibrationMode"),
+    trackerEngine: document.getElementById("trackerEngine"),
+    trackerEngineNote: document.getElementById("trackerEngineNote"),
     modalCalibrateBtn: document.getElementById("modalCalibrateBtn"),
     emptyState: document.getElementById("emptyState")
   };
 
   const state = {
+    engine: window.GazeBackends.CURRENT,
+    engineMetadata: window.GazeBackends.current(),
+    neural: null,
+    backendLoading: false,
+    backendError: false,
+    frameImage: null,
+    faceResults: null,
     running: false,
     paused: false,
     measuring: false,
@@ -148,7 +157,55 @@
     elements.statusDot.classList.toggle("is-error", kind === "error");
     elements.statusText.textContent = text;
     elements.hintText.textContent = hint;
+    elements.trackerEngine.disabled = state.backendLoading || state.validationLocked || state.recording ||
+      state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
     window.dispatchEvent(new Event("tracker-state"));
+  }
+
+  async function loadEngine() {
+    state.neural?.close(); state.neural = null;
+    if (state.engine === window.GazeBackends.CURRENT) {
+      state.engineMetadata = window.GazeBackends.current(); return;
+    }
+    const neural = new window.GazeBackends.NeuralFeatures();
+    try { state.engineMetadata = await neural.init(); state.neural = neural; }
+    catch (error) { neural.close(); throw error; }
+  }
+
+  async function changeEngine() {
+    if (state.backendLoading || state.validationLocked || state.recording || state.measuring || state.autoCorrection || isCalibrationVisible()) {
+      elements.trackerEngine.value = state.engine; return;
+    }
+    const selected = elements.trackerEngine.value;
+    if (selected === state.engine && !state.backendError) return;
+    const wasPaused = state.paused && !state.backendError;
+    state.paused = true; state.backendLoading = true;
+    elements.calibrateBtn.disabled = true; elements.pauseBtn.disabled = true;
+    setStatus("active", "方式を切り替えています", "準備が終わったら9点校正をやり直してください。");
+    try {
+      if (!await window.trackerBridge.drain()) throw Error("処理が終了していません。少し待って選び直してください。");
+      state.engine = selected; state.engineMetadata = null; state.backendError = false;
+      state.calibrationGeneration += 1;
+      resetSession();
+      if (state.running) await loadEngine();
+      else { state.neural?.close(); state.neural = null; }
+      state.paused = wasPaused;
+      elements.trackerEngineNote.textContent = selected === window.GazeBackends.NEURAL
+        ? "GazeFollower2：共通の9点校正で比較します。GazeFollower Team / CC BY-NC-SA 4.0。精度は検証が必要です。"
+        : "現行方式：切り替え後は9点校正をやり直し、同じ条件で正確度を比較してください。";
+    } catch (error) {
+      state.backendError = true; state.paused = true;
+      elements.trackerEngine.value = state.engine;
+      elements.trackerEngineNote.textContent = `準備できませんでした：${error.message}。方式を選び直してください。`;
+    } finally {
+      state.backendLoading = false;
+      elements.calibrateBtn.disabled = !state.running || state.backendError || state.paused;
+      elements.pauseBtn.disabled = !state.running || state.backendError;
+      elements.pauseBtn.textContent = state.paused ? "再開" : "一時停止";
+      elements.downloadBtn.disabled = !state.running || state.backendError;
+      setStatus(state.backendError ? "error" : "active", state.backendError ? "方式の準備に失敗" : "方式を切り替えました",
+        state.backendError ? elements.trackerEngineNote.textContent : "前の方式の校正は使いません。9点校正から進めてください。");
+    }
   }
 
   function resizeCanvas() {
@@ -162,6 +219,7 @@
   }
 
   async function startMediaPipeTracker() {
+    if (state.backendLoading) return;
     if (!window.FaceMesh) {
       setStatus("error", "読み込み失敗", "MediaPipe Face Meshを読み込めません。ネットワーク接続、またはCDNの読み込みを確認してください。");
       return;
@@ -175,6 +233,9 @@
     setStatus("active", "起動中", "ブラウザのカメラ許可を承認してください。");
 
     try {
+      state.backendLoading = true; state.backendError = false;
+      setStatus("active", "計測方式を準備中", "初回のモデル読み込みには少し時間がかかります。");
+      await loadEngine();
       createCameraPreview();
 
       state.stream = await navigator.mediaDevices.getUserMedia({
@@ -198,11 +259,12 @@
         minDetectionConfidence: 0.6,
         minTrackingConfidence: 0.6
       });
-      state.faceMesh.onResults(handleFaceMeshResults);
+      state.faceMesh.onResults(results => { state.faceResults = results; });
       if (typeof state.faceMesh.initialize === "function") {
         await state.faceMesh.initialize();
       }
 
+      state.backendLoading = false;
       state.running = true;
       state.lastVideoTime = null;
       state.paused = false;
@@ -219,6 +281,7 @@
       processVideoFrame();
     } catch (error) {
       stopCamera();
+      state.backendLoading = false;
       setStatus("error", "起動できません", error.message || "カメラ権限とローカルサーバーのURLを確認してください。");
     }
   }
@@ -266,12 +329,22 @@
         video_frame_number: videoMetadata?.presentedFrames ?? null,
         video_expected_display_ms: videoMetadata?.expectedDisplayTime ?? null,
         frame_source: videoMetadata ? "requestVideoFrameCallback" : "currentTime_fallback",
-        processing_start_ms: performance.now(), emitted: false };
+        processing_start_ms: performance.now(), tracker_engine: state.engine, emitted: false };
       try {
-        await state.faceMesh.send({ image: state.video });
+        let image = state.video;
+        if (state.engine === window.GazeBackends.NEURAL) {
+          // Both landmark detection and neural crops must refer to the same captured image.
+          if (!state.frameImage) state.frameImage = document.createElement("canvas");
+          state.frameImage.width = state.video.videoWidth; state.frameImage.height = state.video.videoHeight;
+          state.frameImage.getContext("2d").drawImage(state.video, 0, 0);
+          image = state.frameImage;
+        }
+        state.faceResults = null;
+        await state.faceMesh.send({ image });
+        if (state.faceResults) await handleFaceMeshResults(state.faceResults);
       } catch (error) {
         publishValidationFrame({ valid: false, failure_reason: "processing_error" });
-        setStatus("error", "推定エラー", error.message || "Face Meshの処理に失敗しました。");
+        setStatus("error", "推定エラー", error.message || "視線の処理に失敗しました。");
       } finally {
         publishValidationFrame({ valid: false, failure_reason: "no_result" });
         state.processingFrame = false;
@@ -282,7 +355,7 @@
     scheduleVideoFrame();
   }
 
-  function handleFaceMeshResults(results) {
+  async function handleFaceMeshResults(results) {
     const landmarks = results.multiFaceLandmarks && results.multiFaceLandmarks[0];
     if (!landmarks || state.paused) {
       publishValidationFrame({ valid: false, face_detected: Boolean(landmarks),
@@ -294,7 +367,11 @@
       return;
     }
 
-    const features = extractEyeFeatures(landmarks);
+    const features = state.engine === window.GazeBackends.NEURAL
+      ? await state.neural.features(state.frameImage, landmarks) : extractEyeFeatures(landmarks);
+    if (!state.running || state.paused) {
+      publishValidationFrame({ valid: false, failure_reason: "paused" }); return;
+    }
     if (!features) {
       publishValidationFrame({ valid: false, face_detected: true, failure_reason: "no_eye_features" });
       if (!isCalibrationVisible()) {
@@ -655,7 +732,7 @@
   }
 
   function beginCalibration() {
-    if (state.validationLocked) return;
+    if (state.validationLocked || state.backendLoading || state.backendError) return;
     state.calibrationGeneration += 1;
     state.correctedGeneration = null;
     state.calibrationStartedAt = new Date().toISOString();
@@ -996,8 +1073,8 @@
 
     const matrix = state.calibrationSamples.map((sample) => sample.features);
     state.regression = {
-      x: ridgeRegression(matrix, state.calibrationSamples.map((sample) => sample.x), 0.001),
-      y: ridgeRegression(matrix, state.calibrationSamples.map((sample) => sample.y), 0.001)
+      x: ridgeRegression(matrix, state.calibrationSamples.map((sample) => sample.x), state.engineMetadata.ridge_alpha),
+      y: ridgeRegression(matrix, state.calibrationSamples.map((sample) => sample.y), state.engineMetadata.ridge_alpha)
     };
     state.smoothedGaze = null;
   }
@@ -1148,6 +1225,8 @@
     state.correctionSamples = [];
     state.autoCorrection = null;
     state.featureHistory = [];
+    state.latestFeatures = null;
+    state.latestLandmarks = null;
     state.regression = null;
     state.smoothedGaze = null;
     state.measuring = false;
@@ -1181,7 +1260,8 @@
       "speed_px_per_second",
       "screen_width",
       "screen_height",
-      "face_detected"
+      "face_detected",
+      "tracker_engine"
     ];
     const rows = state.samples.map((sample) => csvRow([
       sample.index,
@@ -1198,7 +1278,8 @@
       sample.speedPxPerSecond,
       sample.width,
       sample.height,
-      sample.confidence
+      sample.confidence,
+      state.engine
     ]));
     return [headers.join(","), ...rows].join("\n");
   }
@@ -1627,6 +1708,7 @@
 
   function stopCamera() {
     state.running = false;
+    state.neural?.close(); state.neural = null;
     if (state.frameRequest !== null) {
       if (typeof state.video?.cancelVideoFrameCallback === "function") state.video.cancelVideoFrameCallback(state.frameRequest);
       else window.cancelAnimationFrame(state.frameRequest);
@@ -1663,10 +1745,11 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.pauseBtn,
+  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.pauseBtn,
     elements.resetBtn, elements.downloadBtn, elements.modalCalibrateBtn];
   let validationControlStates = null;
   window.trackerBridge = {
+    assetPaths() { return window.GazeBackends.assets(state.engine); },
     async startCamera() {
       if (!state.running) await startMediaPipeTracker();
       if (!state.running || state.paused) throw new Error("カメラを開始・再開してください。");
@@ -1691,16 +1774,17 @@
     status() {
       const viewport = state.calibratedViewport;
       return { running: state.running, paused: state.paused, recording: state.recording,
-        busy: state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
+        engine: state.engine, engineLabel: state.engineMetadata?.label || elements.trackerEngine.selectedOptions[0].textContent,
+        busy: state.backendLoading || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
         generation: state.calibrationGeneration,
-        regression_signature: JSON.stringify([state.calibrationGeneration, state.regression, state.correctedGeneration === state.calibrationGeneration]),
+        regression_signature: JSON.stringify([state.calibrationGeneration, state.regression, state.correctedGeneration === state.calibrationGeneration, state.engineMetadata]),
         correctionApplied: state.correctedGeneration === state.calibrationGeneration,
-        ready: Boolean(state.regression && viewport &&
+        ready: Boolean(!state.backendError && !state.backendLoading && state.regression && viewport &&
           viewport.width === innerWidth && viewport.height === innerHeight && viewport.dpr === devicePixelRatio),
         locked: state.validationLocked };
     },
     prepare() {
-      if (!state.running || state.paused || state.recording || state.validationLocked || state.measuring || isCalibrationVisible()) {
+      if (!state.running || state.paused || state.recording || state.validationLocked || state.backendLoading || state.backendError || state.measuring || isCalibrationVisible()) {
         throw new Error("通常計測を停止し、カメラを再開してから準備してください。");
       }
       beginCalibration();
@@ -1716,6 +1800,7 @@
       const track = state.stream?.getVideoTracks()[0];
       const { deviceId, groupId, ...cameraSettings } = track?.getSettings() || {};
       return JSON.parse(JSON.stringify({ calibration_generation: state.calibrationGeneration,
+        engine: state.engineMetadata,
         five_point_correction_applied: status.correctionApplied,
         calibration_started_at: state.calibrationStartedAt, calibration_viewport: state.calibratedViewport,
         regression: state.regression, calibration_samples: state.calibrationSamples,
@@ -1741,6 +1826,7 @@
   };
 
   elements.startBtn.addEventListener("click", startMediaPipeTracker);
+  elements.trackerEngine.addEventListener("change", () => { void changeEngine(); });
   document.getElementById("aimlabReleaseCameraBtn")?.addEventListener("click", () => {
     const status = document.getElementById("aimlabReleaseStatus");
     try {

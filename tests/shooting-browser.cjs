@@ -94,12 +94,13 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
         const result = finish.apply(this, args); window.__shootingGameStarted = false; return result;
       };
     });
+    await require('./tracker-mocks.cjs').configureTracker(page);
     async function prepare() {
       if (pendingStartupResize) {
         const initial = await page.evaluate(() => trackerBridge.status());
         assert.equal(initial.running, false, 'first preparation must start its own camera');
         assert.equal(initial.ready, false, 'no separate calibration may be required');
-        assert.equal(initial.generation, 0);
+        assert.equal(initial.generation, process.env.TEST_TRACKER_ENGINE === 'gazefollower2' ? 1 : 0);
         await page.evaluate(() => {
           window.__startupWidthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
           const initialWidth = innerWidth;
@@ -168,6 +169,8 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     assert.equal(complete.metadata.viewport_height, complete.metadata.tracker.calibration_viewport.height);
     assert.equal(complete.metadata.device_pixel_ratio, complete.metadata.tracker.calibration_viewport.dpr);
     assert.equal(complete.metadata.tracker.calibration_protocol.mode, 'single-click-batch');
+    assert.equal(complete.metadata.tracker.engine.id, process.env.TEST_TRACKER_ENGINE || 'mediapipe-ridge');
+    assert(complete.gaze.every(g => g.tracker_engine === complete.metadata.tracker.engine.id));
     assert.equal(complete.metadata.tracker.calibration_samples.length, 45);
     assert.equal(new Set(complete.metadata.tracker.calibration_samples.flatMap(s => s.source_frame_ids)).size, 360);
     assert(complete.gaze.some(g => g.target_id && g.rendered_frame_id));

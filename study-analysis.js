@@ -107,11 +107,11 @@
     visible.forEach(r => {
       const code = conditionCode(r); if (seen.has(code)) return; seen.add(code);
       const details = document.createElement("details"), summary = document.createElement("summary"), pre = document.createElement("pre");
-      summary.textContent = `${code}：${kindLabel(r.kind)} / 頭部${headLabel(r.head)} / 5点補正${correctionLabel(r)}${r.conditionKnown ? "" : " / 条件情報不足"}`;
+      summary.textContent = `${code}：${kindLabel(r.kind)} / ${r.metadata.tracker?.engine?.label || "方式記録なし"} / 頭部${headLabel(r.head)} / 5点補正${correctionLabel(r)}${r.conditionKnown ? "" : " / 条件情報不足"}`;
       pre.textContent = JSON.stringify(r.conditions, null, 2); details.append(summary, pre); conditions.appendChild(details);
     });
     const select = el("studyDetailSelect"); select.replaceChildren();
-    visible.forEach(r => select.appendChild(new Option(`${kindLabel(r.kind)} / ${r.participant} / ${headLabel(r.head)} / S${r.session} / ${r.id.slice(0, 8)}`, r.id)));
+    visible.forEach(r => select.appendChild(new Option(`${kindLabel(r.kind)} / ${r.metadata.tracker?.engine?.label || "方式記録なし"} / ${r.participant} / ${headLabel(r.head)} / S${r.session} / ${r.id.slice(0, 8)}`, r.id)));
     if (!visible.some(r => r.id === selected)) selected = visible[0]?.id ?? null;
     if (selected) select.value = selected;
     el("studyRunExport").disabled = !visible.length; el("studyGroupExport").disabled = !grouped.length;
