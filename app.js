@@ -42,6 +42,11 @@
     cameraSelect: document.getElementById("cameraSelect"),
     cameraRefreshBtn: document.getElementById("cameraRefreshBtn"),
     cameraStatus: document.getElementById("cameraStatus"),
+    eyeOnlyControls: document.getElementById("eyeOnlyControls"),
+    eyeRoiBtn: document.getElementById("eyeRoiBtn"),
+    eyeOnlyStatus: document.getElementById("eyeOnlyStatus"),
+    eyeRoiDialog: document.getElementById("eyeRoiDialog"),
+    eyeRoiCanvas: document.getElementById("eyeRoiCanvas"),
     modalCalibrateBtn: document.getElementById("modalCalibrateBtn"),
     emptyState: document.getElementById("emptyState")
   };
@@ -56,6 +61,13 @@
     cameraChanging: false,
     cameraLost: false,
     cameraListSerial: 0,
+    eyeRoi: null,
+    eyeThreshold: 50,
+    pupilTracker: null,
+    eyeDraft: null,
+    eyeDragStart: null,
+    eyeDraftValid: false,
+    eyeUiAt: -Infinity,
     frameImage: null,
     faceResults: null,
     running: false,
@@ -164,10 +176,12 @@
     elements.statusDot.classList.toggle("is-error", kind === "error");
     elements.statusText.textContent = text;
     elements.hintText.textContent = hint;
-    elements.trackerEngine.disabled = state.backendLoading || state.cameraChanging || state.validationLocked || state.recording ||
+    elements.trackerEngine.disabled = state.backendLoading || state.cameraChanging || elements.eyeRoiDialog.open || state.validationLocked || state.recording ||
       state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
     elements.cameraSelect.disabled = elements.trackerEngine.disabled;
     elements.cameraRefreshBtn.disabled = elements.trackerEngine.disabled;
+    elements.eyeOnlyControls.hidden = state.engine !== window.GazeBackends.EYE;
+    elements.eyeRoiBtn.disabled = elements.trackerEngine.disabled || !state.running || state.paused;
     if (state.cameraLost) elements.startBtn.disabled = elements.trackerEngine.disabled;
     window.dispatchEvent(new Event("tracker-state"));
   }
@@ -248,6 +262,12 @@
 
   async function loadEngine() {
     state.neural?.close(); state.neural = null;
+    if (state.video) state.video.style.objectFit = state.engine === window.GazeBackends.EYE ? "fill" : "cover";
+    if (state.engine === window.GazeBackends.EYE) {
+      await state.faceMesh?.close?.(); state.faceMesh = null;
+      state.pupilTracker = new window.PupilTracker();
+      state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold); return;
+    }
     if (state.engine === window.GazeBackends.CURRENT) {
       state.engineMetadata = window.GazeBackends.current(); return;
     }
@@ -257,7 +277,7 @@
   }
 
   async function changeEngine() {
-    if (state.backendLoading || state.cameraChanging || state.validationLocked || state.recording || state.measuring || state.autoCorrection || isCalibrationVisible()) {
+    if (state.backendLoading || state.cameraChanging || elements.eyeRoiDialog.open || state.validationLocked || state.recording || state.measuring || state.autoCorrection || isCalibrationVisible()) {
       elements.trackerEngine.value = state.engine; return;
     }
     const selected = elements.trackerEngine.value;
@@ -271,10 +291,15 @@
       state.engine = selected; state.engineMetadata = null; state.backendError = false;
       state.calibrationGeneration += 1;
       resetSession();
-      if (state.running) await loadEngine();
+      if (state.running) {
+        await loadEngine();
+        if (state.engine !== window.GazeBackends.EYE) await initializeFaceMesh();
+      }
       else { state.neural?.close(); state.neural = null; }
       state.paused = wasPaused;
-      elements.trackerEngineNote.textContent = selected === window.GazeBackends.NEURAL
+      elements.trackerEngineNote.textContent = selected === window.GazeBackends.EYE
+        ? "片目の範囲を手動指定して瞳孔を検出します。頭と帽子を固定して使う試作方式です。"
+        : selected === window.GazeBackends.NEURAL
         ? "GazeFollower2：共通の9点校正で比較します。GazeFollower Team / CC BY-NC-SA 4.0。精度は検証が必要です。"
         : "現行方式：切り替え後は9点校正をやり直し、同じ条件で正確度を比較してください。";
     } catch (error) {
@@ -283,7 +308,7 @@
       elements.trackerEngineNote.textContent = `準備できませんでした：${error.message}。方式を選び直してください。`;
     } finally {
       state.backendLoading = false;
-      elements.calibrateBtn.disabled = !state.running || state.backendError || state.paused;
+      elements.calibrateBtn.disabled = !state.running || state.backendError || state.paused || (state.engine === window.GazeBackends.EYE && !state.eyeRoi);
       elements.pauseBtn.disabled = !state.running || state.backendError;
       elements.pauseBtn.textContent = state.paused ? "再開" : "一時停止";
       elements.downloadBtn.disabled = !state.running || state.backendError;
@@ -304,7 +329,7 @@
 
   async function startMediaPipeTracker() {
     if (state.backendLoading || state.cameraChanging) return;
-    if (!window.FaceMesh) {
+    if (state.engine !== window.GazeBackends.EYE && !window.FaceMesh) {
       setStatus("error", "読み込み失敗", "MediaPipe Face Meshを読み込めません。ネットワーク接続、またはCDNの読み込みを確認してください。");
       return;
     }
@@ -344,26 +369,14 @@
       await waitForVideoReady(state.video);
       await state.video.play();
 
-      state.faceMesh = new FaceMesh({
-        locateFile: (file) => `mediapipe/face_mesh/${file}`
-      });
-      state.faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.6
-      });
-      state.faceMesh.onResults(results => { state.faceResults = results; });
-      if (typeof state.faceMesh.initialize === "function") {
-        await state.faceMesh.initialize();
-      }
+      if (state.engine !== window.GazeBackends.EYE) await initializeFaceMesh();
 
       state.backendLoading = false;
       state.running = true;
       state.lastVideoTime = null;
       state.paused = false;
       elements.startBtn.disabled = true;
-      elements.calibrateBtn.disabled = false;
+      elements.calibrateBtn.disabled = state.engine === window.GazeBackends.EYE && !state.eyeRoi;
       elements.correctionBtn.disabled = true;
       elements.pauseBtn.disabled = false;
       elements.resetBtn.disabled = false;
@@ -371,7 +384,8 @@
       elements.emptyState.classList.add("is-hidden");
       elements.gazeDot.classList.add("is-visible");
       setCameraPreview(elements.videoToggle.checked);
-      setStatus("active", "顔検出中", "顔を画面中央に向けて、虹彩が検出されたらキャリブレーションしてください。");
+      setStatus("active", state.engine === window.GazeBackends.EYE ? "目の範囲を指定してください" : "顔検出中",
+        state.engine === window.GazeBackends.EYE ? "「目の範囲・検出を設定」で片目を囲んでください。" : "顔を画面中央に向けて、虹彩が検出されたらキャリブレーションしてください。");
       void refreshCameraList();
       processVideoFrame();
     } catch (error) {
@@ -382,6 +396,14 @@
         ? "選択したカメラが見つかりません。USB接続を確認し、一覧を更新して選び直してください。"
         : error.message || "カメラ権限とローカルサーバーのURLを確認してください。");
     }
+  }
+
+  async function initializeFaceMesh() {
+    if (state.faceMesh) return;
+    state.faceMesh = new FaceMesh({ locateFile: file => `mediapipe/face_mesh/${file}` });
+    state.faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: .6, minTrackingConfidence: .6 });
+    state.faceMesh.onResults(results => { state.faceResults = results; });
+    await state.faceMesh.initialize?.();
   }
 
   function waitForVideoReady(video) {
@@ -413,7 +435,7 @@
   }
 
   async function processVideoFrame(_time, videoMetadata) {
-    if (!state.running || !state.faceMesh || !state.video) return;
+    if (!state.running || (!state.faceMesh && state.engine !== window.GazeBackends.EYE) || !state.video) return;
     if (typeof state.video.requestVideoFrameCallback === "function" && !videoMetadata) {
       scheduleVideoFrame();
       return;
@@ -429,17 +451,21 @@
         frame_source: videoMetadata ? "requestVideoFrameCallback" : "currentTime_fallback",
         processing_start_ms: performance.now(), tracker_engine: state.engine, emitted: false };
       try {
-        let image = state.video;
-        if (state.engine === window.GazeBackends.NEURAL) {
-          // Both landmark detection and neural crops must refer to the same captured image.
-          if (!state.frameImage) state.frameImage = document.createElement("canvas");
-          state.frameImage.width = state.video.videoWidth; state.frameImage.height = state.video.videoHeight;
-          state.frameImage.getContext("2d").drawImage(state.video, 0, 0);
-          image = state.frameImage;
+        if (state.engine === window.GazeBackends.EYE) {
+          processEyeFrame();
+        } else {
+          let image = state.video;
+          if (state.engine === window.GazeBackends.NEURAL) {
+            // Both landmark detection and neural crops must refer to the same captured image.
+            if (!state.frameImage) state.frameImage = document.createElement("canvas");
+            state.frameImage.width = state.video.videoWidth; state.frameImage.height = state.video.videoHeight;
+            state.frameImage.getContext("2d").drawImage(state.video, 0, 0);
+            image = state.frameImage;
+          }
+          state.faceResults = null;
+          await state.faceMesh.send({ image });
+          if (state.faceResults) await handleFaceMeshResults(state.faceResults);
         }
-        state.faceResults = null;
-        await state.faceMesh.send({ image });
-        if (state.faceResults) await handleFaceMeshResults(state.faceResults);
       } catch (error) {
         publishValidationFrame({ valid: false, failure_reason: "processing_error" });
         setStatus("error", "推定エラー", error.message || "視線の処理に失敗しました。");
@@ -479,24 +505,28 @@
     }
 
     state.latestLandmarks = landmarks;
+    drawLandmarkOverlay(landmarks);
+    consumeFeatures(features, { face_detected: true });
+  }
+
+  function consumeFeatures(features, details) {
     state.latestFeatures = features;
     rememberFeatureFrame(features);
-    drawLandmarkOverlay(landmarks);
     state.detectedFrames += 1;
     updateCalibrationCapture(features);
     updateAutoCorrection(features);
 
     if (!state.regression) {
-      publishValidationFrame({ valid: false, face_detected: true, features_detected: true, failure_reason: "no_calibration" });
+      publishValidationFrame({ ...details, valid: false, features_detected: true, failure_reason: "no_calibration" });
       if (!isCalibrationVisible()) {
-        setStatus("active", "顔検出OK", `Face Mesh検出: ${state.detectedFrames}フレーム。キャリブレーションを開始してください。`);
+        setStatus("active", state.engine === window.GazeBackends.EYE ? "瞳孔を検出しています" : "顔検出OK", "9点キャリブレーションを開始してください。");
       }
       return;
     }
 
     const raw = predictGaze(features);
     if (!raw || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) {
-      publishValidationFrame({ valid: false, face_detected: true, features_detected: true, failure_reason: "nonfinite_prediction" });
+      publishValidationFrame({ ...details, valid: false, features_detected: true, failure_reason: "nonfinite_prediction" });
       return;
     }
 
@@ -505,9 +535,125 @@
     const y = clamp(raw.y, 0, window.innerHeight);
     const smoothed = smoothGaze(x, y, timestamp);
     addSample(smoothed.x, smoothed.y, timestamp, features);
-    publishValidationFrame({ valid: true, face_detected: true, features_detected: true,
+    publishValidationFrame({ ...details, valid: true, features_detected: true,
       raw_x: raw.x, raw_y: raw.y, x: Math.round(smoothed.x), y: Math.round(smoothed.y) });
   }
+
+  function processEyeFrame() {
+    if (elements.eyeRoiDialog.open && performance.now() - state.eyeUiAt >= 100) drawEyeRoi();
+    if (!state.eyeRoi) {
+      publishValidationFrame({ valid: false, failure_reason: "eye_roi_required" }); return;
+    }
+    const roi = state.eyeRoi;
+    if (roi.source_width !== state.video.videoWidth || roi.source_height !== state.video.videoHeight) {
+      state.eyeRoi = null; state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
+      state.calibrationGeneration++; resetSession(); elements.calibrateBtn.disabled = true;
+      setStatus("error", "目の範囲を設定し直してください", "カメラの画像サイズが変わりました。目の範囲と校正をやり直してください。");
+      publishValidationFrame({ valid: false, failure_reason: "eye_roi_resolution_changed" }); return;
+    }
+    const result = state.pupilTracker.detect(state.video, roi, state.eyeThreshold);
+    drawPupilPreview(result);
+    if (!result.valid) {
+      state.latestFeatures = null; state.featureHistory = [];
+      elements.eyeOnlyStatus.textContent = result.reason === "pupil_ambiguous" ? "瞳孔の候補が複数あります。目の範囲や暗さを調整してください。" : "瞳孔を検出できません。ピント・明るさ・目の範囲を確認してください。";
+      publishValidationFrame({ valid: false, failure_reason: result.reason }); return;
+    }
+    elements.eyeOnlyStatus.textContent = "瞳孔を検出中です。緑の楕円が瞳孔に合うことを確認してください。";
+    consumeFeatures(result.features, { face_detected: false, pupil_detected: true,
+      pupil_u: result.u, pupil_v: result.v, pupil_quality_score: result.quality,
+      pupil_major_fraction: result.major / result.image_width, pupil_minor_fraction: result.minor / result.image_width,
+      pupil_angle_rad: result.angle });
+  }
+
+  function drawPupilPreview(result) {
+    if (!state.landmarkCanvas || !state.eyeRoi) return;
+    const canvas = state.landmarkCanvas, ctx = state.landmarkContext, roi = state.eyeRoi;
+    canvas.width = state.video.videoWidth; canvas.height = state.video.videoHeight;
+    ctx.strokeStyle = "#22e0b0"; ctx.lineWidth = Math.max(2, canvas.width / 350);
+    ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.width * canvas.width, roi.height * canvas.height);
+    if (result.valid) {
+      const sx = roi.width * canvas.width / result.image_width, sy = roi.height * canvas.height / result.image_height;
+      ctx.save(); ctx.translate(roi.x * canvas.width, roi.y * canvas.height); ctx.scale(sx, sy);
+      ctx.beginPath(); ctx.ellipse(result.cx, result.cy, result.major / 2, result.minor / 2, result.angle, 0, 2 * Math.PI); ctx.stroke(); ctx.restore();
+    }
+  }
+
+  function openEyeRoi() {
+    if (elements.eyeRoiBtn.disabled || state.engine !== window.GazeBackends.EYE) return;
+    state.eyeDraft = state.eyeRoi ? { ...state.eyeRoi } : null;
+    document.getElementById("pupilThreshold").value = String(state.eyeThreshold);
+    document.getElementById("eyeHeadFixed").checked = false;
+    elements.eyeRoiDialog.showModal(); drawEyeRoi();
+    setStatus("active", "目の範囲を設定中", "片目を囲み、緑の楕円が瞳孔に合うように調整してください。");
+  }
+
+  function drawEyeRoi() {
+    if (!elements.eyeRoiDialog.open || !state.video || !state.pupilTracker) return;
+    state.eyeUiAt = performance.now();
+    const canvas = elements.eyeRoiCanvas, ctx = canvas.getContext("2d");
+    if (canvas.width !== state.video.videoWidth) canvas.width = state.video.videoWidth;
+    if (canvas.height !== state.video.videoHeight) canvas.height = state.video.videoHeight;
+    ctx.drawImage(state.video, 0, 0, canvas.width, canvas.height);
+    const threshold = Number(document.getElementById("pupilThreshold").value);
+    document.getElementById("pupilThresholdValue").value = String(threshold);
+    state.eyeDraftValid = false;
+    const roi = state.eyeDraft;
+    let message = "片目をドラッグで囲んでください。";
+    if (roi) {
+      ctx.strokeStyle = "#e8b300"; ctx.lineWidth = Math.max(2, canvas.width / 250);
+      ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.width * canvas.width, roi.height * canvas.height);
+      if (roi.width * canvas.width >= 20 && roi.height * canvas.height >= 20) {
+        const result = state.pupilTracker.detect(state.video, roi, threshold);
+        state.eyeDraftValid = result.valid;
+        message = result.valid ? "緑の楕円が瞳孔に合うことを確認してください。検出スコアは正確度ではありません。"
+          : result.reason === "pupil_ambiguous" ? "暗い候補が複数あります。片目だけを囲み、しきい値を調整してください。"
+          : "瞳孔を検出できません。ピント・明るさ・しきい値・範囲を調整してください。";
+        if (result.valid) {
+          ctx.save(); ctx.translate(roi.x * canvas.width, roi.y * canvas.height);
+          ctx.scale(roi.width * canvas.width / result.image_width, roi.height * canvas.height / result.image_height);
+          ctx.strokeStyle = "#00d49a"; ctx.beginPath(); ctx.ellipse(result.cx, result.cy, result.major / 2, result.minor / 2, result.angle, 0, 2 * Math.PI); ctx.stroke(); ctx.restore();
+        }
+      }
+    }
+    document.getElementById("eyeRoiFeedback").textContent = message;
+    document.getElementById("eyeRoiApply").disabled = !state.eyeDraftValid || !document.getElementById("eyeHeadFixed").checked;
+  }
+
+  const eyePointer = event => {
+    const rect = elements.eyeRoiCanvas.getBoundingClientRect();
+    return { x: clamp((event.clientX - rect.left) / rect.width, 0, 1), y: clamp((event.clientY - rect.top) / rect.height, 0, 1) };
+  };
+  elements.eyeRoiCanvas.addEventListener("pointerdown", event => {
+    state.eyeDragStart = eyePointer(event); elements.eyeRoiCanvas.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  elements.eyeRoiCanvas.addEventListener("pointermove", event => {
+    if (!state.eyeDragStart) return;
+    const p = eyePointer(event), a = state.eyeDragStart;
+    state.eyeDraft = { x: Math.min(a.x, p.x), y: Math.min(a.y, p.y), width: Math.abs(a.x - p.x), height: Math.abs(a.y - p.y) };
+    drawEyeRoi();
+  });
+  elements.eyeRoiCanvas.addEventListener("pointerup", () => { state.eyeDragStart = null; drawEyeRoi(); });
+  elements.eyeRoiCanvas.addEventListener("pointercancel", () => { state.eyeDragStart = null; });
+  document.getElementById("pupilThreshold").addEventListener("input", drawEyeRoi);
+  document.getElementById("eyeHeadFixed").addEventListener("change", drawEyeRoi);
+  document.getElementById("eyeRoiApply").addEventListener("click", () => {
+    if (!elements.eyeRoiDialog.open || !state.running || !state.video || state.engine !== window.GazeBackends.EYE ||
+        state.validationLocked || state.recording || state.measuring || isCalibrationVisible()) return;
+    drawEyeRoi();
+    if (!state.eyeDraftValid || !document.getElementById("eyeHeadFixed").checked) return;
+    state.eyeRoi = { ...state.eyeDraft, source_width: state.video.videoWidth, source_height: state.video.videoHeight };
+    state.eyeThreshold = Number(document.getElementById("pupilThreshold").value);
+    state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold);
+    state.calibrationGeneration++; resetSession(); elements.eyeRoiDialog.close();
+    elements.calibrateBtn.disabled = false;
+    setStatus("active", "目の範囲を設定しました", "頭と帽子を固定したまま、9点校正を行ってください。");
+  });
+  document.getElementById("eyeRoiClose").addEventListener("click", () => elements.eyeRoiDialog.close());
+  elements.eyeRoiDialog.addEventListener("close", () => {
+    state.eyeDragStart = null;
+    if (!state.running) return;
+    setStatus("active", state.eyeRoi ? "目の範囲を設定済み" : "目の範囲を指定してください", "設定を変えた場合は9点校正をやり直してください。");
+  });
 
   function publishValidationFrame(values) {
     const frame = state.currentFrame;
@@ -517,6 +663,7 @@
     const { emitted, ...timing } = frame;
     window.dispatchEvent(new CustomEvent("gaze-frame", { detail: {
       ...timing, processing_end_ms: performance.now(), raw_x: null, raw_y: null, x: null, y: null,
+      ...(state.engine === window.GazeBackends.EYE ? { pupil_detected: false } : {}),
       face_detected: false, features_detected: false, ...values
     } }));
   }
@@ -527,6 +674,7 @@
 
     state.video = document.createElement("video");
     state.video.className = "camera-video";
+    state.video.style.objectFit = state.engine === window.GazeBackends.EYE ? "fill" : "cover";
     state.video.autoplay = true;
     state.video.muted = true;
     state.video.playsInline = true;
@@ -831,6 +979,9 @@
 
   function beginCalibration() {
     if (state.validationLocked || state.cameraChanging || state.cameraLost || state.backendLoading || state.backendError) return;
+    if (state.engine === window.GazeBackends.EYE && !state.eyeRoi) {
+      setStatus("error", "目の範囲が未設定です", "カメラを開始し、「目の範囲・検出を設定」から片目を指定してください。"); return;
+    }
     state.calibrationGeneration += 1;
     state.correctedGeneration = null;
     state.calibrationStartedAt = new Date().toISOString();
@@ -864,7 +1015,7 @@
     elements.calibrationLayer.classList.remove("is-hidden");
     setStatus("active", "キャリブレーション中", state.calibrationProtocol.mode === "single-click-batch"
       ? "各点を1回クリックし、黄色になるまで見つめてください。各点5サンプルを自動収集します。"
-      : "各点を見ながら5回クリックしてください。クリック時の虹彩位置を記録します。");
+      : "各点を見ながら5回クリックしてください。クリック時の目の特徴を記録します。");
   }
 
   function beginCorrectionCalibration() {
@@ -988,12 +1139,12 @@
     if (state.calibrationProtocol?.mode === "single-click-batch") {
       state.calibrationCapture = { point, collector: new window.CalibrationSampling.PointCapture(performance.now()) };
       renderCalibrationTargets(false);
-      setStatus("active", "校正データを収集中", `${point.label}番の点を、黄色になるまで見つめてください。顔・虹彩を検出できない間は進みません。`);
+      setStatus("active", "校正データを収集中", `${point.label}番の点を、黄色になるまで見つめてください。目の特徴を検出できない間は進みません。`);
       return;
     }
     const stableFeatures = getStableCalibrationFeatures();
     if (!stableFeatures) {
-      setStatus("error", "顔検出待ち", "顔と両目が検出されてから、もう一度クリックしてください。");
+      setStatus("error", "目の検出待ち", "目の特徴が検出されてから、もう一度クリックしてください。");
       return;
     }
 
@@ -1359,7 +1510,7 @@
       "screen_width",
       "screen_height",
       "face_detected",
-      "tracker_engine"
+      "tracker_engine", "features_detected", "pupil_detected"
     ];
     const rows = state.samples.map((sample) => csvRow([
       sample.index,
@@ -1376,8 +1527,8 @@
       sample.speedPxPerSecond,
       sample.width,
       sample.height,
-      sample.confidence,
-      state.engine
+      state.engine === window.GazeBackends.EYE ? 0 : sample.confidence,
+      state.engine, sample.confidence, state.engine === window.GazeBackends.EYE ? sample.confidence : ""
     ]));
     return [headers.join(","), ...rows].join("\n");
   }
@@ -1806,8 +1957,11 @@
 
   function stopCamera() {
     state.running = false;
+    if (elements.eyeRoiDialog.open) elements.eyeRoiDialog.close();
     elements.gazeDot.classList.remove("is-visible");
     state.neural?.close(); state.neural = null;
+    state.eyeRoi = null;
+    if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
     if (state.frameRequest !== null) {
       if (typeof state.video?.cancelVideoFrameCallback === "function") state.video.cancelVideoFrameCallback(state.frameRequest);
       else window.cancelAnimationFrame(state.frameRequest);
@@ -1844,10 +1998,13 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.cameraSelect, elements.cameraRefreshBtn, elements.pauseBtn,
+  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.cameraSelect, elements.cameraRefreshBtn, elements.eyeRoiBtn, elements.pauseBtn,
     elements.resetBtn, elements.downloadBtn, elements.modalCalibrateBtn];
   let validationControlStates = null;
   window.trackerBridge = {
+    checkHeadCondition(condition) {
+      if (state.engine === window.GazeBackends.EYE && condition !== "fixed") throw Error("目のみ・帽子固定方式は「頭部固定」で実施してください。頭を動かす条件には対応していません。");
+    },
     assetPaths() { return window.GazeBackends.assets(state.engine); },
     async startCamera() {
       if (!state.running) await startMediaPipeTracker();
@@ -1874,18 +2031,19 @@
       const viewport = state.calibratedViewport;
       return { running: state.running, paused: state.paused, recording: state.recording,
         engine: state.engine, engineLabel: state.engineMetadata?.label || elements.trackerEngine.selectedOptions[0].textContent,
-        busy: state.cameraChanging || state.backendLoading || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
+        busy: elements.eyeRoiDialog.open || state.cameraChanging || state.backendLoading || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
         generation: state.calibrationGeneration,
         regression_signature: JSON.stringify([state.calibrationGeneration, state.regression, state.correctedGeneration === state.calibrationGeneration, state.engineMetadata]),
         correctionApplied: state.correctedGeneration === state.calibrationGeneration,
-        ready: Boolean(!state.cameraLost && !state.cameraChanging && !state.backendError && !state.backendLoading && state.regression && viewport &&
+        ready: Boolean((state.engine !== window.GazeBackends.EYE || state.eyeRoi) && !state.cameraLost && !state.cameraChanging && !state.backendError && !state.backendLoading && state.regression && viewport &&
           viewport.width === innerWidth && viewport.height === innerHeight && viewport.dpr === devicePixelRatio),
         locked: state.validationLocked };
     },
     prepare() {
-      if (!state.running || state.paused || state.recording || state.validationLocked || state.backendLoading || state.backendError || state.measuring || isCalibrationVisible()) {
+      if (!state.running || state.paused || state.recording || state.validationLocked || elements.eyeRoiDialog.open || state.backendLoading || state.backendError || state.measuring || isCalibrationVisible()) {
         throw new Error("通常計測を停止し、カメラを再開してから準備してください。");
       }
+      if (state.engine === window.GazeBackends.EYE && !state.eyeRoi) throw Error("先に「目の範囲・検出を設定」で片目を指定してください。");
       beginCalibration();
     },
     acquire() {
@@ -1932,6 +2090,7 @@
   elements.trackerEngine.addEventListener("change", () => { void changeEngine(); });
   elements.cameraSelect.addEventListener("change", () => { void changeCamera(); });
   elements.cameraRefreshBtn.addEventListener("click", () => { void refreshCameraList(); });
+  elements.eyeRoiBtn.addEventListener("click", openEyeRoi);
   navigator.mediaDevices?.addEventListener?.("devicechange", () => { void refreshCameraList(); });
   document.getElementById("aimlabReleaseCameraBtn")?.addEventListener("click", () => {
     const status = document.getElementById("aimlabReleaseStatus");

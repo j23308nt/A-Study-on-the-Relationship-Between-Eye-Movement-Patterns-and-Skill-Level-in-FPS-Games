@@ -45,9 +45,16 @@
           <select id="trackerEngine">
             <option value="mediapipe-ridge">現行方式</option>
             <option value="gazefollower2">GazeFollower2（比較用）</option>
+            <option value="pupil-roi">目のみ・帽子固定（試作）</option>
           </select>
           <span id="trackerEngineNote">切り替え後は9点校正をやり直してください。同じ条件で正確度を比較できます。</span>
         </label>
+
+        <section id="eyeOnlyControls" class="calibration-options" hidden>
+          <p>帽子のカメラで片目を撮影します。頭の位置・向きと帽子の取り付けを固定して使ってください。</p>
+          <button id="eyeRoiBtn" type="button" disabled>目の範囲・検出を設定</button>
+          <span id="eyeOnlyStatus" aria-live="polite">カメラを開始し、片目の範囲を指定してください。</span>
+        </section>
 
         <label class="calibration-options">次の校正の操作
           <select id="calibrationMode">
@@ -316,8 +323,21 @@
       <p class="validation-footnote">正確度確認は短時間の5位置チェックです。取得率は正確度ではありません。視線到達は推定であり、認識時刻を示すものではありません。頭部非固定の視角は開始位置・入力距離に基づく参考値です。</p>
     </dialog>
 
+    <dialog id="eyeRoiDialog" class="validation-dialog">
+      <div class="validation-heading"><h2>片目の範囲と瞳孔の検出</h2><button id="eyeRoiClose" type="button">閉じる</button></div>
+      <p>映像の片目をドラッグで囲んでください。瞳孔が上下左右に動いても範囲内に残るようにします。映像は左右反転していません。</p>
+      <canvas id="eyeRoiCanvas" width="640" height="480" aria-label="片目の範囲をドラッグして指定"></canvas>
+      <label>暗さのしきい値 <input id="pupilThreshold" type="range" min="5" max="180" value="50"><output id="pupilThresholdValue">50</output></label>
+      <p id="eyeRoiFeedback" aria-live="polite">片目を囲んでください。緑の楕円が瞳孔に合うように調整します。</p>
+      <label><input id="eyeHeadFixed" type="checkbox">頭の位置・向きとカメラの取り付けを固定して使います</label>
+      <p>範囲がずれた場合は設定と校正をやり直してください。検出できたことは視線位置の正確さを保証しません。</p>
+      <button id="eyeRoiApply" class="primary" type="button" disabled>この設定を使う・校正をやり直す</button>
+    </dialog>
+
     <script src="mediapipe/face_mesh/face_mesh.js"></script>
     <script src="calibration-core.js"></script>
+    <script src="pupil-core.js"></script>
+    <script src="pupil-tracker.js"></script>
     <script src="tracker-backends.js"></script>
     <script src="app.js"></script>
     <script src="validation-core.js"></script>

@@ -18,7 +18,7 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, screen: { width: 1000, height: 760 }, acceptDownloads: true });
     const errors = [], payloads = []; let failSave = true;
-    let pendingStartupResize = true;
+    let pendingStartupResize = process.env.TEST_TRACKER_ENGINE !== 'pupil-roi';
     await page.route('**/calibration-core.js', async route => {
       if (pendingStartupResize && route.request().resourceType() === 'fetch') {
         pendingStartupResize = false;
@@ -95,6 +95,7 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       };
     });
     await require('./tracker-mocks.cjs').configureTracker(page);
+    if (process.env.TEST_TRACKER_ENGINE === 'pupil-roi') await page.evaluate(() => { window.__pupilDropouts = true; });
     async function prepare() {
       if (pendingStartupResize) {
         const initial = await page.evaluate(() => trackerBridge.status());
@@ -107,9 +108,13 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
           Object.defineProperty(window, 'innerWidth', { configurable: true, get: () => initialWidth - 32 });
         });
       }
-      await page.locator('#shootingSetupBtn').click(); await page.locator('#sConfirmed').check();
+      await page.locator('#shootingSetupBtn').click();
+      if (process.env.TEST_TRACKER_ENGINE === 'pupil-roi') await page.locator('#sHead').selectOption('fixed');
+      await page.locator('#sConfirmed').check();
       await page.locator('#shootingPrepareBtn').click(); await page.clock.runFor(100);
-      await page.waitForFunction(() => !document.getElementById('shootingSetup').open, null, { polling: 20 });
+      for (let n = 0; n < 30 && await page.locator('#shootingSetup').evaluate(e => e.open) && !await page.locator('#shootingSetupError').innerText(); n++) await page.clock.runFor(100);
+      await page.waitForFunction(() => !document.getElementById('shootingSetup').open || document.getElementById('shootingSetupError').textContent, null, { polling: 20 });
+      assert.equal(await page.locator('#shootingSetup').evaluate(e => e.open), false, await page.locator('#shootingSetupError').innerText());
       for (const id of [1, 2, 3, 4, 6, 7, 8, 9, 5]) {
         await page.evaluate(id => { const p = document.getElementById('Pt' + id); window.__gaze = { x: parseFloat(p.style.left) / 100, y: parseFloat(p.style.top) / 100 }; }, id);
         await page.clock.runFor(350);

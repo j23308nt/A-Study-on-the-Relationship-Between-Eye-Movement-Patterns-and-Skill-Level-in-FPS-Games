@@ -178,6 +178,7 @@
     const withId = rows => rows.map(row => ({ ...identity, ...row }));
     const sampleColumns = ["frame_id", "video_time_s", "video_frame_number", "video_expected_display_ms", "frame_source", "processing_start_ms", "processing_end_ms", "trial_id", "block", "point_id",
       "target_x", "target_y", "target_onset_ms", "raw_x", "raw_y", "x", "y", "valid", "failure_reason", "face_detected", "features_detected",
+      "tracker_engine", "pupil_detected", "pupil_u", "pupil_v", "pupil_quality_score", "pupil_major_fraction", "pupil_minor_fraction", "pupil_angle_rad",
       "error_deg", "raw_error_deg", "trial_status", "in_analysis_window", "crosses_trial_end", "included_in_analysis"];
     return { "session.json": JSON.stringify(bundle, null, 2),
       "samples.csv": csv(withId(bundle.frames), [...Object.keys(identity), ...sampleColumns]),

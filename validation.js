@@ -97,6 +97,7 @@
       config.geometry.viewport_width = innerWidth;
       config.geometry.viewport_height = innerHeight;
       config.device_pixel_ratio = devicePixelRatio;
+      bridge.checkHeadCondition(config.head_condition);
       bridge.prepare();
       config.generation = bridge.status().generation;
       prepared = config;

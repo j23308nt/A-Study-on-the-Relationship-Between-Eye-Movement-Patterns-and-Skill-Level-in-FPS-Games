@@ -641,6 +641,10 @@ body.validation-active .app-shell, body.validation-active .camera-preview, body.
 }
 
 .calibration-options { display: grid; gap: 5px; font-size: 12px; }
+.calibration-options[hidden] { display: none; }
+#eyeRoiCanvas { display: block; width: 100%; height: auto; border: 1px solid #aab7c4; touch-action: none; }
+#eyeRoiDialog > label { display: block; margin: 14px 0; }
+#pupilThreshold { width: min(260px, 65%); vertical-align: middle; }
 .calibration-options select { width: 100%; font: inherit; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
 .calibration-options span { color: var(--muted); line-height: 1.5; }
 .calibration-target.is-capturing { background: #0b7a75; color: #fff; opacity: 1; font-size: 13px; cursor: wait; }

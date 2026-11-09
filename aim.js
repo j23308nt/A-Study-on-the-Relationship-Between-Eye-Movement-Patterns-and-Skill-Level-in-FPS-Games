@@ -66,6 +66,7 @@
         render_gap_abort_ms: 250 });
       A.checkConfig(config);
       if (document.fullscreenElement !== document.documentElement || document.hidden) throw new Error("ページ全体を全画面表示したまま準備してください。");
+      bridge.checkHeadCondition(config.head_condition);
       bridge.prepare(); config.generation = bridge.status().generation; prepared = config;
       el("aimSetup").close();
     } catch (error) { text("aimSetupError", error.message || "準備できませんでした。"); }

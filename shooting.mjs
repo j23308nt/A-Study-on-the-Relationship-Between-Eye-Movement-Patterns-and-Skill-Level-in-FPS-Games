@@ -86,6 +86,7 @@ el('shootingForm').onsubmit = async event => {
     // Camera startup and hash fetches can span the initial fullscreen resize.
     // Capture the same viewport that bridge.prepare() uses for calibration.
     Object.assign(config, { viewport_width: innerWidth, viewport_height: innerHeight, device_pixel_ratio: devicePixelRatio });
+    bridge.checkHeadCondition(config.head_condition);
     bridge.prepare(); config.generation = bridge.status().generation;
     prepared = config; quality = null; qualityTracker = null;
     el('shootingPrecisionAccepted').checked = false; el('shootingPrecisionAccepted').disabled = true;

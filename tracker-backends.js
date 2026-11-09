@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  const CURRENT = "mediapipe-ridge", NEURAL = "gazefollower2";
+  const CURRENT = "mediapipe-ridge", NEURAL = "gazefollower2", EYE = "pupil-roi";
   const base = { id: CURRENT, label: "現行方式", feature_count: 12, ridge_alpha: .001,
     landmark_pipeline: "MediaPipe Face Mesh", mapping: "common-nine-point-ridge-v1" };
 
@@ -42,9 +42,14 @@
       this.pending.clear();
     }
   }
-  root.GazeBackends = { CURRENT, NEURAL, current: () => ({ ...base }), NeuralFeatures,
+  root.GazeBackends = { CURRENT, NEURAL, EYE, current: () => ({ ...base }), NeuralFeatures,
+    eye(roi, threshold) { return { id: EYE, label: "目のみ・帽子固定", feature_count: 6, ridge_alpha: .001,
+      landmark_pipeline: "none", detector: "dark-component-moments-v1", mapping: "quadratic-pupil-roi-v1",
+      roi: roi ? { ...roi } : null, threshold, head_requirement: "fixed position and orientation relative to screen",
+      head_fixed_confirmed: Boolean(roi), experimental: true }; },
     assets(id) {
       const common = ["tracker-backends.js", "gaze-worker.mjs"];
+      if (id === EYE) return [...common, "pupil-core.js", "pupil-tracker.js"];
       return id === NEURAL ? [...common, "vendor/gazefollower2/manifest.json", "vendor/gazefollower2/FaceAlignment.mjs",
         "vendor/gazefollower2/GazeNet_Next.onnx", "vendor/onnxruntime/ort.wasm.min.mjs",
         "vendor/onnxruntime/ort-wasm-simd-threaded.mjs", "vendor/onnxruntime/ort-wasm-simd-threaded.wasm"] : common;
