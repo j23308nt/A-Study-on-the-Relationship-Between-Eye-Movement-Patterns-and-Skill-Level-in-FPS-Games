@@ -287,7 +287,7 @@ async function finish(reason = '') {
 }
 function renderResult() {
   const s = bundle.summary;
-  set('shootingSummary', `${bundle.metadata.tracker?.engine?.label || '方式記録なし'} / ${s.status === 'completed' ? '完了' : `中断：${bundle.metadata.stop_reason}`}。命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}。命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}、最大処理間隔 ${fmt(s.max_gaze_gap_ms)} ms。`);
+  set('shootingSummary', `${bundle.metadata.tracker?.engine?.label || '方式記録なし'} / ${s.status === 'completed' ? '完了' : `中断：${bundle.metadata.stop_reason === 'camera_disconnected' ? 'カメラの接続が切れました' : bundle.metadata.stop_reason}`}。命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}。命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}、最大処理間隔 ${fmt(s.max_gaze_gap_ms)} ms。`);
   el('shootingAnalysisLink').href = `shooting-analysis.html?run=${encodeURIComponent(bundle.metadata.run_id)}`;
 }
 async function save() {
@@ -333,6 +333,7 @@ window.addEventListener('keydown', event => {
 el('shootingCanvas').addEventListener('webglcontextlost', event => { event.preventDefault(); interrupt('webgl_context_lost'); });
 window.addEventListener('beforeunload', event => { if (modalBusy() || (bundle && !saved)) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('tracker-state', readiness);
+window.addEventListener('tracker-camera-lost', () => { interrupt('camera_disconnected'); readiness(); });
 void recovery('get').then(value => { if (value) { recovered = value; el('shootingRecoveryBtn').hidden = false; set('shootingStatus', '未保存の記録が見つかりました。「未保存記録を復元」から保存してください。'); } }).catch(() => {});
 el('shootingRecoveryBtn').onclick = async () => {
   if (!recovered || modalBusy()) return;

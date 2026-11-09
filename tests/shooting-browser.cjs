@@ -198,7 +198,10 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
       window.__lateBackgroundClicks = 0;
       document.getElementById('shootingResultsClose').addEventListener('click', () => window.__lateBackgroundClicks++);
     });
-    failSave = true; await page.mouse.down(); await page.keyboard.press('Escape'); await page.clock.runFor(100);
+    failSave = true; await page.mouse.down();
+    if (process.env.TEST_CAMERA_DISCONNECT === '1') await page.evaluate(() => dispatchEvent(new Event('tracker-camera-lost')));
+    else await page.keyboard.press('Escape');
+    await page.clock.runFor(100);
     await page.waitForFunction(() => document.getElementById('shootingResults').open, null, { polling: 20 });
     await page.locator('#shootingResultsClose').dispatchEvent('pointerup', { pointerType: 'mouse', button: 0 });
     await page.locator('#shootingResultsClose').dispatchEvent('mouseup', { button: 0 });
@@ -208,6 +211,7 @@ const path = require('node:path'), fs = require('node:fs'), os = require('node:o
     assert.equal(await page.locator('#shootingResults').evaluate(e => e.open), true);
     const aborted = JSON.parse(payloads.at(-1).files['session.json']);
     assert.equal(aborted.metadata.status, 'aborted'); assert(aborted.targets.every(t => t.status !== 'visible'));
+    if (process.env.TEST_CAMERA_DISCONNECT === '1') assert.equal(aborted.metadata.stop_reason, 'camera_disconnected');
     const abortedPayload = payloads.at(-1);
     await page.reload(); await page.clock.runFor(100);
     await page.locator('#shootingRecoveryBtn').waitFor();

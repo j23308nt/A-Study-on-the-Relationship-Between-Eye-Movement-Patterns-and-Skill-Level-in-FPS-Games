@@ -39,6 +39,9 @@
     calibrationMode: document.getElementById("calibrationMode"),
     trackerEngine: document.getElementById("trackerEngine"),
     trackerEngineNote: document.getElementById("trackerEngineNote"),
+    cameraSelect: document.getElementById("cameraSelect"),
+    cameraRefreshBtn: document.getElementById("cameraRefreshBtn"),
+    cameraStatus: document.getElementById("cameraStatus"),
     modalCalibrateBtn: document.getElementById("modalCalibrateBtn"),
     emptyState: document.getElementById("emptyState")
   };
@@ -49,6 +52,10 @@
     neural: null,
     backendLoading: false,
     backendError: false,
+    cameraId: "",
+    cameraChanging: false,
+    cameraLost: false,
+    cameraListSerial: 0,
     frameImage: null,
     faceResults: null,
     running: false,
@@ -157,9 +164,86 @@
     elements.statusDot.classList.toggle("is-error", kind === "error");
     elements.statusText.textContent = text;
     elements.hintText.textContent = hint;
-    elements.trackerEngine.disabled = state.backendLoading || state.validationLocked || state.recording ||
+    elements.trackerEngine.disabled = state.backendLoading || state.cameraChanging || state.validationLocked || state.recording ||
       state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
+    elements.cameraSelect.disabled = elements.trackerEngine.disabled;
+    elements.cameraRefreshBtn.disabled = elements.trackerEngine.disabled;
+    if (state.cameraLost) elements.startBtn.disabled = elements.trackerEngine.disabled;
     window.dispatchEvent(new Event("tracker-state"));
+  }
+
+  async function refreshCameraList() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      elements.cameraStatus.textContent = "カメラ一覧を取得できません。ブラウザのカメラ設定を確認してください。"; return;
+    }
+    const serial = ++state.cameraListSerial;
+    try {
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput" && d.deviceId);
+      if (serial !== state.cameraListSerial) return;
+      const selected = state.cameraId;
+      elements.cameraSelect.replaceChildren(new Option("自動選択（既定のカメラ）", ""));
+      devices.forEach((device, i) => elements.cameraSelect.add(new Option(device.label || `カメラ${i + 1}（名前は許可後に表示）`, device.deviceId)));
+      if (selected && !devices.some(d => d.deviceId === selected)) {
+        elements.cameraSelect.add(new Option("選択したカメラ（未接続・未確認）", selected));
+      }
+      elements.cameraSelect.value = selected;
+      const track = state.stream?.getVideoTracks()[0];
+      elements.cameraStatus.textContent = state.running && !state.cameraLost
+        ? `使用中：${track?.label || "ブラウザで選択されたカメラ"}`
+        : "USBカメラを選び、「開始」または「1. 条件入力・9点校正」へ進んでください。名前が出ない場合は一度「開始」でカメラを許可してください。";
+    } catch {
+      elements.cameraStatus.textContent = "一覧を更新できませんでした。カメラの接続とブラウザの許可を確認して再試行してください。";
+    }
+  }
+
+  async function changeCamera() {
+    if (elements.trackerEngine.disabled || state.cameraChanging) {
+      elements.cameraSelect.value = state.cameraId; return;
+    }
+    const selected = elements.cameraSelect.value;
+    if (selected === state.cameraId && !state.cameraLost) return;
+    state.cameraChanging = true; state.paused = true;
+    elements.startBtn.disabled = true;
+    setStatus("active", "カメラを変更中", "処理を終了しています。");
+    try {
+      if (!await window.trackerBridge.drain()) throw Error("カメラの処理が終了していません。少し待って選び直してください。");
+      const mesh = state.faceMesh;
+      stopCamera(); state.faceMesh = null;
+      state.cameraId = selected; state.cameraLost = false;
+      state.calibrationGeneration += 1; resetSession();
+      await mesh?.close?.();
+      state.paused = false;
+      elements.pauseBtn.textContent = "一時停止";
+      elements.startBtn.disabled = false;
+      elements.calibrateBtn.disabled = true; elements.pauseBtn.disabled = true;
+      setStatus("idle", "カメラを選びました", "「開始」または「1. 条件入力・9点校正」で起動し、9点校正をやり直してください。");
+    } catch (error) {
+      elements.cameraSelect.value = state.cameraId;
+      setStatus("error", "カメラを変更できません", error.message);
+    } finally {
+      state.cameraChanging = false;
+      elements.trackerEngine.disabled = state.backendLoading || state.validationLocked || state.recording || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
+      elements.cameraSelect.disabled = elements.trackerEngine.disabled;
+      elements.cameraRefreshBtn.disabled = elements.trackerEngine.disabled;
+      if (!state.running && !elements.trackerEngine.disabled) elements.startBtn.disabled = false;
+      void refreshCameraList();
+      window.dispatchEvent(new Event("tracker-state"));
+    }
+  }
+
+  function cameraDisconnected(stream) {
+    if (state.stream !== stream || !state.running) return;
+    state.cameraLost = true; state.paused = true;
+    state.calibratedViewport = null; state.calibrationGeneration += 1;
+    window.dispatchEvent(new Event("tracker-camera-lost"));
+    stopCamera();
+    if (!state.validationLocked && !state.recording) resetSession();
+    elements.calibrateBtn.disabled = true; elements.correctionBtn.disabled = true; elements.pauseBtn.disabled = true;
+    elements.downloadBtn.disabled = !state.recording;
+    elements.cameraStatus.textContent = "カメラの接続が切れました。再接続して一覧を更新してください。";
+    setStatus("error", "カメラの接続が切れました", state.recording
+      ? "「計測停止・保存」で取得済みの記録を保存してください。"
+      : "別のカメラへは切り替えません。再接続して「開始」から起動し、9点校正をやり直してください。");
   }
 
   async function loadEngine() {
@@ -173,7 +257,7 @@
   }
 
   async function changeEngine() {
-    if (state.backendLoading || state.validationLocked || state.recording || state.measuring || state.autoCorrection || isCalibrationVisible()) {
+    if (state.backendLoading || state.cameraChanging || state.validationLocked || state.recording || state.measuring || state.autoCorrection || isCalibrationVisible()) {
       elements.trackerEngine.value = state.engine; return;
     }
     const selected = elements.trackerEngine.value;
@@ -219,7 +303,7 @@
   }
 
   async function startMediaPipeTracker() {
-    if (state.backendLoading) return;
+    if (state.backendLoading || state.cameraChanging) return;
     if (!window.FaceMesh) {
       setStatus("error", "読み込み失敗", "MediaPipe Face Meshを読み込めません。ネットワーク接続、またはCDNの読み込みを確認してください。");
       return;
@@ -234,18 +318,28 @@
 
     try {
       state.backendLoading = true; state.backendError = false;
+      state.cameraLost = false;
       setStatus("active", "計測方式を準備中", "初回のモデル読み込みには少し時間がかかります。");
+      if (state.faceMesh && !state.running) {
+        if (!await window.trackerBridge.drain()) throw Error("カメラの終了処理を待ってから再試行してください。");
+        await state.faceMesh.close?.(); state.faceMesh = null;
+      }
       await loadEngine();
       createCameraPreview();
 
       state.stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "user",
+          ...(state.cameraId ? { deviceId: { exact: state.cameraId } } : { facingMode: "user" }),
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
         audio: false
       });
+      const cameraStream = state.stream, track = cameraStream.getVideoTracks()[0];
+      const openedId = track?.getSettings().deviceId;
+      if (state.cameraId && openedId && openedId !== state.cameraId) throw Error("選択したカメラを起動できませんでした。カメラを選び直してください。");
+      if (openedId) state.cameraId = openedId;
+      track?.addEventListener("ended", () => cameraDisconnected(cameraStream), { once: true });
       state.video.srcObject = state.stream;
       await waitForVideoReady(state.video);
       await state.video.play();
@@ -278,11 +372,15 @@
       elements.gazeDot.classList.add("is-visible");
       setCameraPreview(elements.videoToggle.checked);
       setStatus("active", "顔検出中", "顔を画面中央に向けて、虹彩が検出されたらキャリブレーションしてください。");
+      void refreshCameraList();
       processVideoFrame();
     } catch (error) {
       stopCamera();
       state.backendLoading = false;
-      setStatus("error", "起動できません", error.message || "カメラ権限とローカルサーバーのURLを確認してください。");
+      elements.startBtn.disabled = false;
+      setStatus("error", "起動できません", ["NotFoundError", "OverconstrainedError"].includes(error.name)
+        ? "選択したカメラが見つかりません。USB接続を確認し、一覧を更新して選び直してください。"
+        : error.message || "カメラ権限とローカルサーバーのURLを確認してください。");
     }
   }
 
@@ -732,7 +830,7 @@
   }
 
   function beginCalibration() {
-    if (state.validationLocked || state.backendLoading || state.backendError) return;
+    if (state.validationLocked || state.cameraChanging || state.cameraLost || state.backendLoading || state.backendError) return;
     state.calibrationGeneration += 1;
     state.correctedGeneration = null;
     state.calibrationStartedAt = new Date().toISOString();
@@ -1325,7 +1423,7 @@
 
   async function toggleRecording() {
     if (state.validationLocked) return;
-    if (!state.regression) {
+    if (!state.recording && !state.regression) {
       setStatus("error", "キャリブレーション未完了", "計測前に9点キャリブレーションを完了してください。");
       return;
     }
@@ -1344,7 +1442,7 @@
     elements.downloadBtn.disabled = true;
     elements.downloadBtn.textContent = "保存中";
     await saveCsvToFolder();
-    elements.downloadBtn.disabled = false;
+    elements.downloadBtn.disabled = !state.running;
     elements.downloadBtn.textContent = "計測開始";
   }
 
@@ -1708,6 +1806,7 @@
 
   function stopCamera() {
     state.running = false;
+    elements.gazeDot.classList.remove("is-visible");
     state.neural?.close(); state.neural = null;
     if (state.frameRequest !== null) {
       if (typeof state.video?.cancelVideoFrameCallback === "function") state.video.cancelVideoFrameCallback(state.frameRequest);
@@ -1745,7 +1844,7 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.pauseBtn,
+  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.cameraSelect, elements.cameraRefreshBtn, elements.pauseBtn,
     elements.resetBtn, elements.downloadBtn, elements.modalCalibrateBtn];
   let validationControlStates = null;
   window.trackerBridge = {
@@ -1775,11 +1874,11 @@
       const viewport = state.calibratedViewport;
       return { running: state.running, paused: state.paused, recording: state.recording,
         engine: state.engine, engineLabel: state.engineMetadata?.label || elements.trackerEngine.selectedOptions[0].textContent,
-        busy: state.backendLoading || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
+        busy: state.cameraChanging || state.backendLoading || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible(),
         generation: state.calibrationGeneration,
         regression_signature: JSON.stringify([state.calibrationGeneration, state.regression, state.correctedGeneration === state.calibrationGeneration, state.engineMetadata]),
         correctionApplied: state.correctedGeneration === state.calibrationGeneration,
-        ready: Boolean(!state.backendError && !state.backendLoading && state.regression && viewport &&
+        ready: Boolean(!state.cameraLost && !state.cameraChanging && !state.backendError && !state.backendLoading && state.regression && viewport &&
           viewport.width === innerWidth && viewport.height === innerHeight && viewport.dpr === devicePixelRatio),
         locked: state.validationLocked };
     },
@@ -1821,12 +1920,19 @@
       state.validationLocked = false;
       if (validationControlStates) validationControls.forEach((control, i) => { control.disabled = validationControlStates[i]; });
       validationControlStates = null;
+      if (state.cameraLost) {
+        elements.startBtn.disabled = false;
+        for (const control of [elements.calibrateBtn, elements.correctionBtn, elements.pauseBtn, elements.downloadBtn]) control.disabled = true;
+      }
       window.dispatchEvent(new Event("tracker-state"));
     }
   };
 
   elements.startBtn.addEventListener("click", startMediaPipeTracker);
   elements.trackerEngine.addEventListener("change", () => { void changeEngine(); });
+  elements.cameraSelect.addEventListener("change", () => { void changeCamera(); });
+  elements.cameraRefreshBtn.addEventListener("click", () => { void refreshCameraList(); });
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => { void refreshCameraList(); });
   document.getElementById("aimlabReleaseCameraBtn")?.addEventListener("click", () => {
     const status = document.getElementById("aimlabReleaseStatus");
     try {
@@ -1855,6 +1961,7 @@
   });
 
   resizeCanvas();
+  if (isAllowedOrigin()) void refreshCameraList();
 
   if (!isAllowedOrigin()) {
     setStatus("error", "起動URLを確認", "このアプリは http://localhost:8000/、http://127.0.0.1:8780/ またはHTTPSで開いてください。file:// ではカメラが使えません。");

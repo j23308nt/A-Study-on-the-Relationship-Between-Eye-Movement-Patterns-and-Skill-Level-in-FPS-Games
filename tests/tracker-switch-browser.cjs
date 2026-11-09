@@ -6,10 +6,14 @@ const F = require('./study-fixtures.cjs');
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: process.platform === 'win32' ? 'msedge' : undefined });
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
-  const errors = [], writes = [], artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'tracker-switch-'));
+  const errors = [], writes = [], savedCsv = [], artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'tracker-switch-'));
   page.on('pageerror', e => errors.push(e.message));
   try {
     await page.route('**/save-*', route => { writes.push(route.request().url()); return route.abort(); });
+    await page.route('**/save-csv', route => {
+      savedCsv.push(route.request().postDataJSON());
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, path: 'synthetic-test-only' }) });
+    });
     await page.route('**/mediapipe/face_mesh/face_mesh.js', route => route.fulfill({ contentType: 'text/javascript', body: `
       window.FaceMesh = class {
         setOptions(){} async initialize(){} onResults(f){this.f=f;}
@@ -25,7 +29,24 @@ const F = require('./study-fixtures.cjs');
         }
       };` }));
     await page.addInitScript(() => {
-      navigator.mediaDevices.getUserMedia = async () => new MediaStream();
+      window.__devices = [
+        { kind: 'videoinput', deviceId: 'internal-test-id', label: 'Built-in Camera' },
+        { kind: 'videoinput', deviceId: 'usb-test-private-id', label: 'USB Webcam' }
+      ];
+      navigator.mediaDevices.enumerateDevices = async () => window.__devices;
+      navigator.mediaDevices.getUserMedia = async constraints => {
+        window.__lastCameraConstraints = constraints;
+        const id = constraints.video.deviceId?.exact || 'internal-test-id';
+        const device = window.__devices.find(d => d.deviceId === id);
+        if (!device) throw new DOMException('Synthetic missing camera', 'OverconstrainedError');
+        const stream = new MediaStream(), track = new EventTarget();
+        track.label = device.label; track.readyState = 'live';
+        track.getSettings = () => ({ deviceId: id, groupId: 'private-group-test', width: 1280, height: 720, frameRate: 30 });
+        track.stop = () => { track.readyState = 'ended'; };
+        stream.getTracks = stream.getVideoTracks = () => [track];
+        window.__cameraTrack = track; window.__cameraRequests = (window.__cameraRequests || 0) + 1;
+        return stream;
+      };
       HTMLVideoElement.prototype.play = async () => {};
       for (const [name, get] of Object.entries({ readyState: () => 4, videoWidth: () => 640, videoHeight: () => 480,
         currentTime: () => Math.floor(performance.now() / 33) / 30 })) Object.defineProperty(HTMLVideoElement.prototype, name, { get, configurable: true });
@@ -41,6 +62,7 @@ const F = require('./study-fixtures.cjs');
     async function calibrate() {
       await page.evaluate(() => trackerBridge.prepare());
       assert.equal(await page.locator('#trackerEngine').isDisabled(), true);
+      assert.equal(await page.locator('#cameraSelect').isDisabled(), true);
       // A scripted event must not bypass the disabled control.
       const engine = await page.locator('#trackerEngine').inputValue();
       await page.evaluate(() => { const e = document.getElementById('trackerEngine'); e.value = e.value === 'gazefollower2' ? 'mediapipe-ridge' : 'gazefollower2'; e.dispatchEvent(new Event('change')); });
@@ -80,6 +102,42 @@ const F = require('./study-fixtures.cjs');
     await page.locator('#trackerEngine').selectOption('mediapipe-ridge'); await page.clock.runFor(100);
     assert.equal(await page.evaluate(() => trackerBridge.status().paused), false);
     assert.equal(await page.locator('#calibrateBtn').isEnabled(), true);
+    // Explicit USB selection stops the old camera and requires fresh calibration.
+    await page.locator('#cameraSelect').selectOption('usb-test-private-id'); await page.clock.runFor(100);
+    assert.equal(await page.evaluate(() => trackerBridge.status().running), false);
+    assert.equal(await page.evaluate(() => trackerBridge.status().ready), false);
+    await page.locator('#startBtn').click(); await page.clock.runFor(300);
+    assert.equal(await page.evaluate(() => __lastCameraConstraints.video.deviceId.exact), 'usb-test-private-id');
+    assert((await page.locator('#cameraStatus').innerText()).includes('USB Webcam'));
+    const usb = await calibrate();
+    assert.equal(usb.camera_label, 'USB Webcam');
+    assert(!JSON.stringify(usb).includes('usb-test-private-id')); assert(!JSON.stringify(usb).includes('private-group-test'));
+    await page.evaluate(() => trackerBridge.acquire());
+    assert.equal(await page.locator('#cameraSelect').isDisabled(), true);
+    await page.evaluate(() => { const s = document.getElementById('cameraSelect'); s.value = 'internal-test-id'; s.dispatchEvent(new Event('change')); });
+    assert.equal(await page.locator('#cameraSelect').inputValue(), 'usb-test-private-id');
+    await page.evaluate(() => trackerBridge.release());
+    // Removing USB never silently starts the built-in camera.
+    await page.locator('#downloadBtn').click(); await page.clock.runFor(300);
+    assert.equal(await page.locator('#cameraSelect').isDisabled(), true);
+    const requests = await page.evaluate(() => __cameraRequests);
+    await page.evaluate(() => { window.__lostEvents = 0; addEventListener('tracker-camera-lost', () => __lostEvents++); window.__devices = __devices.slice(0, 1); __cameraTrack.dispatchEvent(new Event('ended')); });
+    await page.clock.runFor(100);
+    assert.equal(await page.evaluate(() => __lostEvents), 1);
+    assert.equal(await page.evaluate(() => trackerBridge.status().running), false);
+    assert.equal(await page.evaluate(() => trackerBridge.status().ready), false);
+    assert.equal(await page.locator('#downloadBtn').isEnabled(), true);
+    await page.locator('#downloadBtn').click(); await page.clock.runFor(100);
+    assert.equal(savedCsv.length, 1); assert(savedCsv[0].csv.split('\n').length > 1);
+    await page.locator('#cameraRefreshBtn').click();
+    assert.equal(await page.locator('#cameraSelect').inputValue(), 'usb-test-private-id');
+    await page.locator('#startBtn').click(); await page.clock.runFor(100);
+    assert.equal(await page.evaluate(() => __cameraRequests), requests);
+    assert((await page.locator('#hintText').innerText()).includes('選択したカメラが見つかりません'));
+    await page.locator('#cameraSelect').selectOption('internal-test-id'); await page.clock.runFor(100);
+    await page.locator('#startBtn').click(); await page.clock.runFor(300);
+    assert.equal(await page.evaluate(() => trackerBridge.status().running), true);
+    assert.equal(await page.evaluate(() => trackerBridge.status().ready), false);
     await page.screenshot({ path: path.join(artifacts, 'selector-desktop.png') });
     // Same participant/session may be shown for both engines, but never pooled together.
     const a = F.validation(), b = F.validation({ id: 'other-engine', offset: 40 });
@@ -93,9 +151,9 @@ const F = require('./study-fixtures.cjs');
     assert.equal(await page.locator('#validationCompareRows tr').nth(1).locator('td').nth(1).innerText(), 'GazeFollower2');
     await page.screenshot({ path: path.join(artifacts, 'comparison.png') });
     await page.keyboard.press('Escape'); await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#trackerEngine').scrollIntoViewIfNeeded();
+    await page.locator('#cameraSelect').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(artifacts, 'selector-mobile.png') });
     assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-    console.log(JSON.stringify({ ok: true, checks: ['switch invalidates calibration', 'locked during calibration/acquire', '259-D shared calibration', 'failure recovery', 'per-engine comparison'], artifacts }));
+    console.log(JSON.stringify({ ok: true, checks: ['switch invalidates calibration', 'locked during calibration/acquire', '259-D shared calibration', 'failure recovery', 'per-engine comparison', 'explicit USB selection', 'camera change invalidates calibration', 'camera identifiers excluded', 'USB disconnect without fallback'], artifacts }));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

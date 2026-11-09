@@ -26,6 +26,13 @@
           <p id="hintText">カメラを許可して、画面上の9点を順番に見ながらクリックしてください。</p>
         </section>
 
+        <section class="calibration-options" aria-label="カメラの選択">
+          <label for="cameraSelect">使用するカメラ</label>
+          <select id="cameraSelect"><option value="">自動選択（既定のカメラ）</option></select>
+          <button id="cameraRefreshBtn" type="button">カメラ一覧を更新</button>
+          <span id="cameraStatus" aria-live="polite">USBカメラを接続して選択してください。名前が出ない場合は一度「開始」でカメラを許可してください。</span>
+        </section>
+
         <section class="controls" aria-label="Tracker controls">
           <button class="primary" id="startBtn" type="button">開始</button>
           <button id="calibrateBtn" type="button" disabled>キャリブレーション</button>

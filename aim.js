@@ -179,7 +179,7 @@
   }
   function renderResults() {
     const s = bundle.summary;
-    text("aimSummary", `${bundle.metadata.participant_id} / セッション${bundle.metadata.session_number} / 頭部${bundle.metadata.head_condition === "fixed" ? "固定" : "非固定"} — ${s.status === "completed" ? "完了" : `中断（${bundle.metadata.stop_reason || "途中終了"}）`}。命中 ${s.hits}/${s.planned_trials}、時間切れ ${s.timeouts}、外れ ${s.miss_clicks}、的の受付時間外クリック ${s.outside_window_clicks}。命中までの平均 ${fmt(s.mean_hit_response_ms)} ms、中央値 ${fmt(s.median_hit_response_ms)} ms。クリック命中率 ${fmt(s.click_hit_fraction === null ? null : s.click_hit_fraction * 100)}%。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames} フレーム。`);
+    text("aimSummary", `${bundle.metadata.participant_id} / セッション${bundle.metadata.session_number} / 頭部${bundle.metadata.head_condition === "fixed" ? "固定" : "非固定"} — ${s.status === "completed" ? "完了" : `中断（${bundle.metadata.stop_reason === "camera_disconnected" ? "カメラの接続が切れました" : bundle.metadata.stop_reason || "途中終了"}）`}。命中 ${s.hits}/${s.planned_trials}、時間切れ ${s.timeouts}、外れ ${s.miss_clicks}、的の受付時間外クリック ${s.outside_window_clicks}。命中までの平均 ${fmt(s.mean_hit_response_ms)} ms、中央値 ${fmt(s.median_hit_response_ms)} ms。クリック命中率 ${fmt(s.click_hit_fraction === null ? null : s.click_hit_fraction * 100)}%。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames} フレーム。`);
     const body = el("aimTrialRows"), select = el("aimTrialSelect"); body.replaceChildren(); select.replaceChildren();
     bundle.trials.forEach(t => {
       const row = document.createElement("tr");
@@ -278,5 +278,6 @@
     if (active || finishing || (bundle && !saved)) { event.preventDefault(); event.returnValue = ""; }
   });
   window.addEventListener("tracker-state", readiness);
+  window.addEventListener("tracker-camera-lost", () => { if (active) void finish("camera_disconnected"); });
   readiness();
 }());

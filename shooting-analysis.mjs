@@ -34,7 +34,7 @@ function load(value, name) {
   stop(); bundle = C.checkBundle(value); const m = bundle.metadata, s = bundle.summary;
   if (!s || !Number.isFinite(m.end_ms)) throw Error('終了した記録を読み込んでください。');
   el('identity').textContent = `${m.participant_id} / ${m.tracker?.engine?.label || '方式記録なし'} / セッション${m.session_number} / 頭部${m.head_condition === 'fixed' ? '固定' : '非固定'} / ${m.started_at}`;
-  el('summary').textContent = `${s.status === 'completed' ? '完了' : `中断（${m.stop_reason}）`}：命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}、命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}（カウントダウンを含む）。`;
+  el('summary').textContent = `${s.status === 'completed' ? '完了' : `中断（${m.stop_reason === 'camera_disconnected' ? 'カメラの接続が切れました' : m.stop_reason}）`}：命中 ${s.hits} / 射撃 ${s.shots}、命中率 ${s.accuracy === null ? '—' : fmt(s.accuracy * 100) + '%'}、命中まで平均 ${fmt(s.mean_hit_response_ms)} ms。視線取得 ${s.valid_gaze_frames}/${s.processed_gaze_frames}（カウントダウンを含む）。`;
   el('qualityInfo').textContent = `5位置の短時間正確度確認：位置平均の平均 ${fmt(m.quality?.mean_error_deg)}°、誤差95%点 ${fmt(m.quality?.p95_error_px)} CSS px。5点補正${m.five_point_correction_applied ? 'あり' : 'なし'}。${m.head_condition === 'free' ? '視角は開始位置・距離に基づく参考値です。' : ''}`;
   el('recordView').hidden = false;
   el('replayStage').style.aspectRatio = `${m.viewport_width} / ${m.viewport_height}`;

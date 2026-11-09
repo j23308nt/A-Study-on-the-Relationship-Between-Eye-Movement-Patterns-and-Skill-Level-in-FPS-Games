@@ -243,7 +243,7 @@
     const reasons = { display_changed: "画面の表示条件が変わりました", viewport_changed: "画面サイズが変わりました",
       window_blur: "別のウィンドウに切り替わりました", fullscreen_exit: "全画面表示が解除されました",
       document_hidden: "ページが非表示になりました", user_escape: "Escで終了しました",
-      render_stall_over_250ms: "描画が250ms以上停止しました" };
+      render_stall_over_250ms: "描画が250ms以上停止しました", camera_disconnected: "カメラの接続が切れました" };
     const stateLabel = s.status === "completed" ? (s.data_complete ? "完了" : "完了・欠測あり")
       : `中断：${reasons[bundle.metadata.stop_reason] || "検証が途中で終了しました"}`;
     text("validationSummary", `${bundle.metadata.participant_id} / ${bundle.metadata.tracker?.engine?.label || "方式記録なし"} / ${headLabel(bundle.metadata.head_condition)} / セッション${bundle.metadata.session_number} — ${stateLabel}。全位置・全試行が揃った平均誤差：${number(s.mean_error_deg)}°。完了試行 ${s.trials.filter(t => t.status === "completed").length}/27。`);
@@ -378,5 +378,6 @@
     if (active || finishing || (bundle && !saved)) { event.preventDefault(); event.returnValue = ""; }
   });
   window.addEventListener("tracker-state", readiness);
+  window.addEventListener("tracker-camera-lost", () => { if (active) void finish("camera_disconnected"); });
   readiness();
 }());
