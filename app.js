@@ -40,6 +40,7 @@
     trackerEngine: document.getElementById("trackerEngine"),
     trackerEngineNote: document.getElementById("trackerEngineNote"),
     cameraSelect: document.getElementById("cameraSelect"),
+    cameraRotation: document.getElementById("cameraRotation"),
     cameraRefreshBtn: document.getElementById("cameraRefreshBtn"),
     cameraStatus: document.getElementById("cameraStatus"),
     eyeOnlyControls: document.getElementById("eyeOnlyControls"),
@@ -58,6 +59,7 @@
     backendLoading: false,
     backendError: false,
     cameraId: "",
+    cameraRotation: readCameraRotation(),
     cameraChanging: false,
     cameraLost: false,
     cameraListSerial: 0,
@@ -179,6 +181,7 @@
     elements.trackerEngine.disabled = state.backendLoading || state.cameraChanging || elements.eyeRoiDialog.open || state.validationLocked || state.recording ||
       state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
     elements.cameraSelect.disabled = elements.trackerEngine.disabled;
+    elements.cameraRotation.disabled = elements.trackerEngine.disabled;
     elements.cameraRefreshBtn.disabled = elements.trackerEngine.disabled;
     elements.eyeOnlyControls.hidden = state.engine !== window.GazeBackends.EYE;
     elements.eyeRoiBtn.disabled = elements.trackerEngine.disabled || !state.running || state.paused;
@@ -210,6 +213,48 @@
     }
   }
 
+  function readCameraRotation() {
+    try { return localStorage.getItem("eye-tracking.camera-rotation") === "180" ? 180 : 0; }
+    catch { return 0; }
+  }
+
+  async function changeCameraRotation() {
+    if (elements.trackerEngine.disabled || state.cameraChanging) {
+      elements.cameraRotation.value = String(state.cameraRotation); return;
+    }
+    const selected = elements.cameraRotation.value === "180" ? 180 : 0;
+    if (selected === state.cameraRotation) return;
+    const wasPaused = state.paused;
+    let failure = null;
+    state.cameraChanging = true; state.paused = true;
+    setStatus("active", "映像の向きを変更中", "処理を終了しています。");
+    try {
+      if (!await window.trackerBridge.drain()) throw Error("カメラの処理が終了していません。少し待って変更してください。");
+      state.cameraRotation = selected;
+      try { localStorage.setItem("eye-tracking.camera-rotation", String(selected)); } catch {}
+      state.eyeRoi = null;
+      if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
+      state.calibrationGeneration++; resetSession(); clearLandmarkOverlay();
+      if (state.video) state.video.style.transform = `rotate(${selected}deg)`;
+      elements.calibrateBtn.disabled = !state.running || wasPaused || state.backendError || state.engine === window.GazeBackends.EYE;
+    } catch (error) {
+      elements.cameraRotation.value = String(state.cameraRotation);
+      failure = error;
+    } finally {
+      state.cameraChanging = false; state.paused = wasPaused;
+      if (failure) setStatus("error", "映像の向きを変更できません", failure.message);
+      else setStatus(state.running ? "active" : "idle", "映像の向きを設定しました",
+          state.engine === window.GazeBackends.EYE ? "目の範囲を指定し直し、9点校正を行ってください。" : "9点校正をやり直してください。");
+    }
+  }
+
+  function drawCameraFrame(context) {
+    context.save();
+    if (state.cameraRotation === 180) context.setTransform(-1, 0, 0, -1, context.canvas.width, context.canvas.height);
+    context.drawImage(state.video, 0, 0, context.canvas.width, context.canvas.height);
+    context.restore();
+  }
+
   async function changeCamera() {
     if (elements.trackerEngine.disabled || state.cameraChanging) {
       elements.cameraSelect.value = state.cameraId; return;
@@ -238,6 +283,7 @@
       state.cameraChanging = false;
       elements.trackerEngine.disabled = state.backendLoading || state.validationLocked || state.recording || state.measuring || Boolean(state.autoCorrection) || isCalibrationVisible();
       elements.cameraSelect.disabled = elements.trackerEngine.disabled;
+      elements.cameraRotation.disabled = elements.trackerEngine.disabled;
       elements.cameraRefreshBtn.disabled = elements.trackerEngine.disabled;
       if (!state.running && !elements.trackerEngine.disabled) elements.startBtn.disabled = false;
       void refreshCameraList();
@@ -455,11 +501,11 @@
           processEyeFrame();
         } else {
           let image = state.video;
-          if (state.engine === window.GazeBackends.NEURAL) {
+          if (state.engine === window.GazeBackends.NEURAL || state.cameraRotation === 180) {
             // Both landmark detection and neural crops must refer to the same captured image.
             if (!state.frameImage) state.frameImage = document.createElement("canvas");
             state.frameImage.width = state.video.videoWidth; state.frameImage.height = state.video.videoHeight;
-            state.frameImage.getContext("2d").drawImage(state.video, 0, 0);
+            drawCameraFrame(state.frameImage.getContext("2d"));
             image = state.frameImage;
           }
           state.faceResults = null;
@@ -551,7 +597,7 @@
       setStatus("error", "目の範囲を設定し直してください", "カメラの画像サイズが変わりました。目の範囲と校正をやり直してください。");
       publishValidationFrame({ valid: false, failure_reason: "eye_roi_resolution_changed" }); return;
     }
-    const result = state.pupilTracker.detect(state.video, roi, state.eyeThreshold);
+    const result = state.pupilTracker.detect(state.video, roi, state.eyeThreshold, state.cameraRotation);
     drawPupilPreview(result);
     if (!result.valid) {
       state.latestFeatures = null; state.featureHistory = [];
@@ -593,7 +639,7 @@
     const canvas = elements.eyeRoiCanvas, ctx = canvas.getContext("2d");
     if (canvas.width !== state.video.videoWidth) canvas.width = state.video.videoWidth;
     if (canvas.height !== state.video.videoHeight) canvas.height = state.video.videoHeight;
-    ctx.drawImage(state.video, 0, 0, canvas.width, canvas.height);
+    drawCameraFrame(ctx);
     const threshold = Number(document.getElementById("pupilThreshold").value);
     document.getElementById("pupilThresholdValue").value = String(threshold);
     state.eyeDraftValid = false;
@@ -603,7 +649,7 @@
       ctx.strokeStyle = "#e8b300"; ctx.lineWidth = Math.max(2, canvas.width / 250);
       ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.width * canvas.width, roi.height * canvas.height);
       if (roi.width * canvas.width >= 20 && roi.height * canvas.height >= 20) {
-        const result = state.pupilTracker.detect(state.video, roi, threshold);
+        const result = state.pupilTracker.detect(state.video, roi, threshold, state.cameraRotation);
         state.eyeDraftValid = result.valid;
         message = result.valid ? "緑の楕円が瞳孔に合うことを確認してください。検出スコアは正確度ではありません。"
           : result.reason === "pupil_ambiguous" ? "暗い候補が複数あります。片目だけを囲み、しきい値を調整してください。"
@@ -675,6 +721,7 @@
     state.video = document.createElement("video");
     state.video.className = "camera-video";
     state.video.style.objectFit = state.engine === window.GazeBackends.EYE ? "fill" : "cover";
+    state.video.style.transform = `rotate(${state.cameraRotation}deg)`;
     state.video.autoplay = true;
     state.video.muted = true;
     state.video.playsInline = true;
@@ -1510,7 +1557,7 @@
       "screen_width",
       "screen_height",
       "face_detected",
-      "tracker_engine", "features_detected", "pupil_detected"
+      "tracker_engine", "features_detected", "pupil_detected", "camera_rotation_deg"
     ];
     const rows = state.samples.map((sample) => csvRow([
       sample.index,
@@ -1528,7 +1575,7 @@
       sample.width,
       sample.height,
       state.engine === window.GazeBackends.EYE ? 0 : sample.confidence,
-      state.engine, sample.confidence, state.engine === window.GazeBackends.EYE ? sample.confidence : ""
+      state.engine, sample.confidence, state.engine === window.GazeBackends.EYE ? sample.confidence : "", state.cameraRotation
     ]));
     return [headers.join(","), ...rows].join("\n");
   }
@@ -1998,7 +2045,7 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.cameraSelect, elements.cameraRefreshBtn, elements.eyeRoiBtn, elements.pauseBtn,
+  const validationControls = [elements.calibrateBtn, elements.correctionBtn, elements.calibrationMode, elements.trackerEngine, elements.cameraSelect, elements.cameraRotation, elements.cameraRefreshBtn, elements.eyeRoiBtn, elements.pauseBtn,
     elements.resetBtn, elements.downloadBtn, elements.modalCalibrateBtn];
   let validationControlStates = null;
   window.trackerBridge = {
@@ -2065,7 +2112,7 @@
         smoothing: { minimum: SMOOTHING_MIN, maximum: SMOOTHING_MAX, deadzone_px: SMOOTHING_DEADZONE_PX,
           full_response_px: SMOOTHING_FULL_RESPONSE_PX, max_speed_px_s: MAX_GAZE_SPEED_PX_PER_SECOND,
           output: "clamped, smoothed, rounded CSS pixels" },
-        camera_label: track?.label || "不明", camera_settings: cameraSettings,
+        camera_label: track?.label || "不明", camera_settings: cameraSettings, camera_rotation_deg: state.cameraRotation,
         frame_clock: "requestVideoFrameCallback mediaTime/presentedFrames when supported; otherwise currentTime at send (approximate deduplication). Neither is exposure time.",
         processing_clock: "performance.now milliseconds relative to performance.timeOrigin" }));
     },
@@ -2089,6 +2136,8 @@
   elements.startBtn.addEventListener("click", startMediaPipeTracker);
   elements.trackerEngine.addEventListener("change", () => { void changeEngine(); });
   elements.cameraSelect.addEventListener("change", () => { void changeCamera(); });
+  elements.cameraRotation.value = String(state.cameraRotation);
+  elements.cameraRotation.addEventListener("change", () => { void changeCameraRotation(); });
   elements.cameraRefreshBtn.addEventListener("click", () => { void refreshCameraList(); });
   elements.eyeRoiBtn.addEventListener("click", openEyeRoi);
   navigator.mediaDevices?.addEventListener?.("devicechange", () => { void refreshCameraList(); });

@@ -335,7 +335,7 @@
         dpr: r.metadata.device_pixel_ratio, camera: r.metadata.tracker?.camera_label, camera_settings: r.metadata.tracker?.camera_settings,
         five_point_correction_applied: r.metadata.tracker?.five_point_correction_applied,
         calibration_protocol: r.metadata.tracker?.calibration_protocol ?? null,
-        engine: r.metadata.tracker?.engine ?? null,
+        engine: r.metadata.tracker?.engine ?? null, camera_rotation_deg: r.metadata.tracker?.camera_rotation_deg ?? 0,
         smoothing: r.metadata.tracker?.smoothing, source: r.metadata.source_sha256, os_scale: r.metadata.os_scale_note,
         zoom: r.metadata.browser_zoom_note, environment: r.metadata.environment_notes }));
       if (new Set(conditions).size !== 1) return `${id}: 条件またはコード版が異なるため、範囲を集計しません`;

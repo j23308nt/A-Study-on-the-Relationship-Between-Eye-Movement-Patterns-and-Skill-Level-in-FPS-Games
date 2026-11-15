@@ -30,6 +30,12 @@
           <label for="cameraSelect">使用するカメラ</label>
           <select id="cameraSelect"><option value="">自動選択（既定のカメラ）</option></select>
           <button id="cameraRefreshBtn" type="button">カメラ一覧を更新</button>
+          <label for="cameraRotation">映像の向き</label>
+          <select id="cameraRotation">
+            <option value="0">通常</option>
+            <option value="180">逆さまを補正（180°回転）</option>
+          </select>
+          <span>逆さまに取り付けた場合は180°回転を選んでください。変更後は目の範囲と校正をやり直します。</span>
           <span id="cameraStatus" aria-live="polite">USBカメラを接続して選択してください。名前が出ない場合は一度「開始」でカメラを許可してください。</span>
         </section>
 
@@ -325,7 +331,7 @@
 
     <dialog id="eyeRoiDialog" class="validation-dialog">
       <div class="validation-heading"><h2>片目の範囲と瞳孔の検出</h2><button id="eyeRoiClose" type="button">閉じる</button></div>
-      <p>映像の片目をドラッグで囲んでください。瞳孔が上下左右に動いても範囲内に残るようにします。映像は左右反転していません。</p>
+      <p>映像の片目をドラッグで囲んでください。瞳孔が上下左右に動いても範囲内に残るようにします。「映像の向き」で補正した映像を表示します（鏡像ではありません）。</p>
       <canvas id="eyeRoiCanvas" width="640" height="480" aria-label="片目の範囲をドラッグして指定"></canvas>
       <label>暗さのしきい値 <input id="pupilThreshold" type="range" min="5" max="180" value="50"><output id="pupilThresholdValue">50</output></label>
       <p id="eyeRoiFeedback" aria-live="polite">片目を囲んでください。緑の楕円が瞳孔に合うように調整します。</p>

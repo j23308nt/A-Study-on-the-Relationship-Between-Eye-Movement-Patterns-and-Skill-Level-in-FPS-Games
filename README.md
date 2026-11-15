@@ -25,6 +25,7 @@
 ```powershell
 node --test tests/pupil-core.test.js
 node tests/pupil-browser.cjs
+node tests/camera-rotation-browser.cjs
 $env:TEST_TRACKER_ENGINE='pupil-roi'
 node tests/shooting-browser.cjs
 Remove-Item Env:TEST_TRACKER_ENGINE
@@ -33,6 +34,10 @@ Remove-Item Env:TEST_TRACKER_ENGINE
 ブラウザテストにはPlaywrightを使用します。`pupil-browser.cjs` は起動済みのローカルサーバー（既定 `http://127.0.0.1:8780/`、`VALIDATION_URL` で変更可能）、3Dテストはテスト専用サーバーを使用し、実験記録は書き込みません。
 
 ## 外付けUSBカメラを使う
+
+カメラを逆さまに取り付ける場合は、「映像の向き」を **「逆さまを補正（180°回転）」** にします。上下と左右の両方を入れ替え、正立した向きでプレビュー・目の範囲設定・視線推定を行います。現行方式・GazeFollower2・目のみ方式に対応します。設定は同じブラウザに保存され、カメラを変更しても引き継ぐため、取り付け方向に合わせて選んでください。
+
+向きを変更すると校正を無効にします。目のみ方式は片目の範囲から再設定して9点校正をやり直してください。校正・計測中は向きを変更できません。研究用JSONの `metadata.tracker.camera_rotation_deg` と通常CSVの `camera_rotation_deg` に `0` または `180` を記録し、異なる向きの結果は分けて比較します。WindowsのAim Lab専用アプリはこの設定の対象外です。
 
 1. USBカメラをPCに接続し、アプリを開きます。
 2. 左上の「使用するカメラ」でUSBカメラの名前を選びます。接続後に表示されなければ「カメラ一覧を更新」を押してください。

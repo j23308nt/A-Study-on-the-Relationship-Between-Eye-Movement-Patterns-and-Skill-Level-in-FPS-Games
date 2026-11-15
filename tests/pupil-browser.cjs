@@ -37,6 +37,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     });
     await page.clock.install(); await page.clock.pauseAt(new Date(Date.now() + 1000));
     await page.goto(process.env.VALIDATION_URL || 'http://127.0.0.1:8780/');
+    await page.locator('#cameraRotation').selectOption('180'); await page.clock.runFor(100);
     await require('./tracker-mocks.cjs').configurePupil(page);
     assert.equal(await page.locator('#calibrateBtn').isEnabled(), true);
     assert.equal(await page.evaluate(() => { try { trackerBridge.checkHeadCondition('free'); return false; } catch { return true; } }), true);
@@ -51,6 +52,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     for (let n = 0; n < 30 && await page.locator('#validationSetup').evaluate(e => e.open); n++) await page.clock.runFor(100);
     assert.equal(await page.locator('#validationSetup').evaluate(e => e.open), false, await page.locator('#validationSetupError').innerText());
     assert.equal(await page.locator('#eyeRoiBtn').isDisabled(), true);
+    assert.equal(await page.locator('#cameraRotation').isDisabled(), true);
     for (const id of [1, 2, 3, 4, 6, 7, 8, 9, 5]) {
       await page.evaluate(id => { const p = document.getElementById('Pt' + id); window.__gaze = { x: parseFloat(p.style.left) / 100, y: parseFloat(p.style.top) / 100 }; }, id);
       await page.clock.runFor(350); await page.locator('#Pt' + id).click();
@@ -60,6 +62,9 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.clock.runFor(5300);
     const snapshot = await page.evaluate(() => trackerBridge.acquire());
     assert.equal(snapshot.engine.id, 'pupil-roi'); assert.equal(snapshot.engine.landmark_pipeline, 'none');
+    assert.equal(snapshot.camera_rotation_deg, 180);
+    await page.evaluate(() => { const e = document.getElementById('cameraRotation'); e.value = '0'; e.dispatchEvent(new Event('change')); });
+    assert.equal(await page.locator('#cameraRotation').inputValue(), '180', 'scripted changes must respect measurement lock');
     assert.equal(snapshot.engine.head_fixed_confirmed, true); assert.equal(snapshot.engine.roi.source_width, 640);
     assert.equal(snapshot.regression.x.length, 6); assert.equal(snapshot.calibration_samples.length, 45);
     assert.equal(new Set(snapshot.calibration_samples.flatMap(s => s.source_frame_ids)).size, 360);
@@ -67,6 +72,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.evaluate(() => { window.__gaze = { x: .7, y: .3 }; __frames = []; }); await page.clock.runFor(1500);
     const valid = (await page.evaluate(() => __frames)).filter(f => f.valid);
     assert(valid.length > 20); assert(valid.every(f => !f.face_detected && f.pupil_detected && f.tracker_engine === 'pupil-roi'));
+    assert(valid.at(-1).pupil_u < .5 && valid.at(-1).pupil_v > .5, 'pupil coordinates use the rotated image');
     assert(Math.abs(valid.at(-1).raw_x - 770) < 35); assert(Math.abs(valid.at(-1).raw_y - 270) < 35);
     await page.evaluate(() => { window.__missing = true; __frames = []; }); await page.clock.runFor(300);
     const lost = await page.evaluate(() => __frames);
@@ -77,6 +83,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.waitForFunction(() => document.getElementById('validationSaveStatus').textContent.includes('保存済み'));
     assert.equal(bundles.length, 1); assert.equal(bundles[0].summary.status, 'completed');
     assert.equal(bundles[0].summary.trials.length, 27); assert.equal(bundles[0].metadata.tracker.engine.id, 'pupil-roi');
+    assert.equal(bundles[0].metadata.tracker.camera_rotation_deg, 180);
     assert(bundles[0].metadata.source_sha256['pupil-core.js']);
     assert(bundles[0].frames.some(f => f.valid && f.pupil_detected && !f.face_detected));
     await page.locator('#validationResultsClose').click();
@@ -85,6 +92,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     const [columns, ...csvRows] = csvRecords[0].split('\n').map(row => row.split(','));
     assert(csvRows.length > 2);
     assert(csvRows.every(row => row[columns.indexOf('face_detected')] === '0' && row[columns.indexOf('pupil_detected')] === '1'));
+    assert(csvRows.every(row => row[columns.indexOf('camera_rotation_deg')] === '180'));
     await page.locator('#eyeRoiBtn').click();
     assert.equal(await page.locator('#eyeRoiApply').isDisabled(), true, 'head-fixed confirmation must be renewed');
     assert.equal(await page.evaluate(() => { try { trackerBridge.prepare(); return false; } catch { return true; } }), true);
@@ -94,6 +102,16 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.screenshot({ path: path.join(artifacts, 'eye-settings-mobile.png') });
     await page.locator('#eyeHeadFixed').check(); await page.locator('#eyeRoiApply').click();
     assert.equal(await page.evaluate(() => trackerBridge.status().ready), false, 'ROI change invalidates calibration');
+    await page.locator('#cameraRotation').selectOption('0'); await page.clock.runFor(100);
+    assert.equal(await page.locator('#calibrateBtn').isDisabled(), true, 'rotation change invalidates ROI');
+    assert.equal(await page.evaluate(() => { try { trackerBridge.prepare(); return false; } catch { return true; } }), true);
+    // Restore a ROI so the separate resolution-change guard can still be tested.
+    await page.locator('#eyeRoiBtn').click();
+    await page.locator('#eyeRoiCanvas').scrollIntoViewIfNeeded();
+    const box = await page.locator('#eyeRoiCanvas').boundingBox();
+    await page.mouse.move(box.x + box.width * .25, box.y + box.height * .25); await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .75, box.y + box.height * .75); await page.mouse.up();
+    await page.locator('#eyeHeadFixed').check(); await page.locator('#eyeRoiApply').click();
     await page.evaluate(() => { window.__videoWidth = 800; }); await page.clock.runFor(150);
     assert.equal(await page.locator('#calibrateBtn').isDisabled(), true, 'resolution change invalidates ROI');
     await page.locator('#eyeRoiBtn').click();
