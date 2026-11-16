@@ -43,8 +43,9 @@
     }
   }
   root.GazeBackends = { CURRENT, NEURAL, EYE, current: () => ({ ...base }), NeuralFeatures,
-    eye(roi, threshold) { return { id: EYE, label: "目のみ・帽子固定", feature_count: 6, ridge_alpha: .001,
-      landmark_pipeline: "none", detector: "dark-component-moments-v1", mapping: "quadratic-pupil-roi-v1",
+    eye(roi, threshold, auto = true) { return { id: EYE, label: "目のみ・帽子固定", feature_count: 6, ridge_alpha: .001,
+      landmark_pipeline: "none", detector: auto ? root.EyePupil.VERSION : "dark-component-moments-v1", mapping: "quadratic-pupil-roi-v1",
+      auto_threshold: auto, contour_fit: auto ? "deterministic-ransac-conic" : "image-moments", temporal_hint_max_age_ms: auto ? 250 : null,
       roi: roi ? { ...roi } : null, threshold, head_requirement: "fixed position and orientation relative to screen",
       head_fixed_confirmed: Boolean(roi), experimental: true }; },
     assets(id) {

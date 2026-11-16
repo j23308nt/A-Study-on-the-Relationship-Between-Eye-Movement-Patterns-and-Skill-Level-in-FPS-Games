@@ -60,6 +60,25 @@ const assert = require('node:assert/strict');
       return [0,180].map(rotation => p.detect(v,{x:0,y:0,width:1,height:1},50,rotation));
     });
     assert(pupils.every(p => p.valid));
+    await page.evaluate(() => {
+      const tracker = new PupilTracker(), video = document.querySelector('.camera-video'), roi = {x:0,y:0,width:1,height:1};
+      const first = tracker.detect(video,roi,50,180);
+      if (!first.valid) throw Error('Expected probe pupil');
+      const original = EyePupil.detectAdaptive;
+      window.__trackingProbe = {tracker,video,roi,original};
+      EyePupil.detectAdaptive = (_g,_w,_h,options) => {
+        window.__trackingHint = Boolean(options.previous);
+        return {valid:false,reason:'pupil_not_found',diagnostic:'insufficient_edges'};
+      };
+      const lost = tracker.detect(video,roi,50,180);
+      if(lost.valid || lost.features || !window.__trackingHint) throw Error('Missing image must remain invalid despite cached pupil');
+    });
+    await page.clock.runFor(300);
+    assert.equal(await page.evaluate(() => {
+      const p=__trackingProbe; p.tracker.detect(p.video,p.roi,50,180);
+      EyePupil.detectAdaptive=p.original; delete window.__trackingProbe;
+      return window.__trackingHint;
+    }), false, 'tracking hints expire after 250ms');
     assert(Math.abs(pupils[1].cx - (199 - pupils[0].cx)) < .1);
     assert(Math.abs(pupils[1].cy - (119 - pupils[0].cy)) < .1);
     await page.locator('#eyeRoiBtn').click();

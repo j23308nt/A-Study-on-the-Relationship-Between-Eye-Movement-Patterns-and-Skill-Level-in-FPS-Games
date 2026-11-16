@@ -65,6 +65,8 @@
     cameraListSerial: 0,
     eyeRoi: null,
     eyeThreshold: 50,
+    eyeAuto: true,
+    eyeDraftTracker: null,
     pupilTracker: null,
     eyeDraft: null,
     eyeDragStart: null,
@@ -233,7 +235,7 @@
       state.cameraRotation = selected;
       try { localStorage.setItem("eye-tracking.camera-rotation", String(selected)); } catch {}
       state.eyeRoi = null;
-      if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
+      if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold, state.eyeAuto);
       state.calibrationGeneration++; resetSession(); clearLandmarkOverlay();
       if (state.video) state.video.style.transform = `rotate(${selected}deg)`;
       elements.calibrateBtn.disabled = !state.running || wasPaused || state.backendError || state.engine === window.GazeBackends.EYE;
@@ -312,7 +314,7 @@
     if (state.engine === window.GazeBackends.EYE) {
       await state.faceMesh?.close?.(); state.faceMesh = null;
       state.pupilTracker = new window.PupilTracker();
-      state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold); return;
+      state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold, state.eyeAuto); return;
     }
     if (state.engine === window.GazeBackends.CURRENT) {
       state.engineMetadata = window.GazeBackends.current(); return;
@@ -592,21 +594,23 @@
     }
     const roi = state.eyeRoi;
     if (roi.source_width !== state.video.videoWidth || roi.source_height !== state.video.videoHeight) {
-      state.eyeRoi = null; state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
+      state.eyeRoi = null; state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold, state.eyeAuto);
       state.calibrationGeneration++; resetSession(); elements.calibrateBtn.disabled = true;
       setStatus("error", "目の範囲を設定し直してください", "カメラの画像サイズが変わりました。目の範囲と校正をやり直してください。");
       publishValidationFrame({ valid: false, failure_reason: "eye_roi_resolution_changed" }); return;
     }
-    const result = state.pupilTracker.detect(state.video, roi, state.eyeThreshold, state.cameraRotation);
+    const result = state.pupilTracker.detect(state.video, roi, state.eyeThreshold, state.cameraRotation, { auto: state.eyeAuto });
     drawPupilPreview(result);
     if (!result.valid) {
       state.latestFeatures = null; state.featureHistory = [];
-      elements.eyeOnlyStatus.textContent = result.reason === "pupil_ambiguous" ? "瞳孔の候補が複数あります。目の範囲や暗さを調整してください。" : "瞳孔を検出できません。ピント・明るさ・目の範囲を確認してください。";
-      publishValidationFrame({ valid: false, failure_reason: result.reason }); return;
+      elements.eyeOnlyStatus.textContent = window.EyePupil.describe(result);
+      publishValidationFrame({ valid: false, failure_reason: result.reason, pupil_diagnostic: result.diagnostic || result.reason }); return;
     }
-    elements.eyeOnlyStatus.textContent = "瞳孔を検出中です。緑の楕円が瞳孔に合うことを確認してください。";
+    elements.eyeOnlyStatus.textContent = window.EyePupil.describe(result);
     consumeFeatures(result.features, { face_detected: false, pupil_detected: true,
       pupil_u: result.u, pupil_v: result.v, pupil_quality_score: result.quality,
+      pupil_threshold: result.threshold ?? state.eyeThreshold, pupil_diagnostic: result.diagnostic || "ok",
+      pupil_contour_support: result.contour_support ?? null,
       pupil_major_fraction: result.major / result.image_width, pupil_minor_fraction: result.minor / result.image_width,
       pupil_angle_rad: result.angle });
   }
@@ -614,7 +618,9 @@
   function drawPupilPreview(result) {
     if (!state.landmarkCanvas || !state.eyeRoi) return;
     const canvas = state.landmarkCanvas, ctx = state.landmarkContext, roi = state.eyeRoi;
-    canvas.width = state.video.videoWidth; canvas.height = state.video.videoHeight;
+    if (canvas.width !== state.video.videoWidth) canvas.width = state.video.videoWidth;
+    if (canvas.height !== state.video.videoHeight) canvas.height = state.video.videoHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = "#22e0b0"; ctx.lineWidth = Math.max(2, canvas.width / 350);
     ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.width * canvas.width, roi.height * canvas.height);
     if (result.valid) {
@@ -628,6 +634,8 @@
     if (elements.eyeRoiBtn.disabled || state.engine !== window.GazeBackends.EYE) return;
     state.eyeDraft = state.eyeRoi ? { ...state.eyeRoi } : null;
     document.getElementById("pupilThreshold").value = String(state.eyeThreshold);
+    document.getElementById("pupilAuto").checked = state.eyeAuto;
+    state.eyeDraftTracker = new window.PupilTracker();
     document.getElementById("eyeHeadFixed").checked = false;
     elements.eyeRoiDialog.showModal(); drawEyeRoi();
     setStatus("active", "目の範囲を設定中", "片目を囲み、緑の楕円が瞳孔に合うように調整してください。");
@@ -641,7 +649,9 @@
     if (canvas.height !== state.video.videoHeight) canvas.height = state.video.videoHeight;
     drawCameraFrame(ctx);
     const threshold = Number(document.getElementById("pupilThreshold").value);
-    document.getElementById("pupilThresholdValue").value = String(threshold);
+    const auto = document.getElementById("pupilAuto").checked;
+    document.getElementById("pupilThreshold").disabled = auto;
+    document.getElementById("pupilThresholdValue").value = auto ? "自動" : String(threshold);
     state.eyeDraftValid = false;
     const roi = state.eyeDraft;
     let message = "片目をドラッグで囲んでください。";
@@ -649,11 +659,9 @@
       ctx.strokeStyle = "#e8b300"; ctx.lineWidth = Math.max(2, canvas.width / 250);
       ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.width * canvas.width, roi.height * canvas.height);
       if (roi.width * canvas.width >= 20 && roi.height * canvas.height >= 20) {
-        const result = state.pupilTracker.detect(state.video, roi, threshold, state.cameraRotation);
+        const result = state.eyeDraftTracker.detect(state.video, roi, threshold, state.cameraRotation, { auto, track: false });
         state.eyeDraftValid = result.valid;
-        message = result.valid ? "緑の楕円が瞳孔に合うことを確認してください。検出スコアは正確度ではありません。"
-          : result.reason === "pupil_ambiguous" ? "暗い候補が複数あります。片目だけを囲み、しきい値を調整してください。"
-          : "瞳孔を検出できません。ピント・明るさ・しきい値・範囲を調整してください。";
+        message = window.EyePupil.describe(result);
         if (result.valid) {
           ctx.save(); ctx.translate(roi.x * canvas.width, roi.y * canvas.height);
           ctx.scale(roi.width * canvas.width / result.image_width, roi.height * canvas.height / result.image_height);
@@ -681,6 +689,7 @@
   elements.eyeRoiCanvas.addEventListener("pointerup", () => { state.eyeDragStart = null; drawEyeRoi(); });
   elements.eyeRoiCanvas.addEventListener("pointercancel", () => { state.eyeDragStart = null; });
   document.getElementById("pupilThreshold").addEventListener("input", drawEyeRoi);
+  document.getElementById("pupilAuto").addEventListener("change", drawEyeRoi);
   document.getElementById("eyeHeadFixed").addEventListener("change", drawEyeRoi);
   document.getElementById("eyeRoiApply").addEventListener("click", () => {
     if (!elements.eyeRoiDialog.open || !state.running || !state.video || state.engine !== window.GazeBackends.EYE ||
@@ -689,7 +698,9 @@
     if (!state.eyeDraftValid || !document.getElementById("eyeHeadFixed").checked) return;
     state.eyeRoi = { ...state.eyeDraft, source_width: state.video.videoWidth, source_height: state.video.videoHeight };
     state.eyeThreshold = Number(document.getElementById("pupilThreshold").value);
-    state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold);
+    state.eyeAuto = document.getElementById("pupilAuto").checked;
+    state.pupilTracker.reset();
+    state.engineMetadata = window.GazeBackends.eye(state.eyeRoi, state.eyeThreshold, state.eyeAuto);
     state.calibrationGeneration++; resetSession(); elements.eyeRoiDialog.close();
     elements.calibrateBtn.disabled = false;
     setStatus("active", "目の範囲を設定しました", "頭と帽子を固定したまま、9点校正を行ってください。");
@@ -2008,7 +2019,7 @@
     elements.gazeDot.classList.remove("is-visible");
     state.neural?.close(); state.neural = null;
     state.eyeRoi = null;
-    if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold);
+    if (state.engine === window.GazeBackends.EYE) state.engineMetadata = window.GazeBackends.eye(null, state.eyeThreshold, state.eyeAuto);
     if (state.frameRequest !== null) {
       if (typeof state.video?.cancelVideoFrameCallback === "function") state.video.cancelVideoFrameCallback(state.frameRequest);
       else window.cancelAnimationFrame(state.frameRequest);

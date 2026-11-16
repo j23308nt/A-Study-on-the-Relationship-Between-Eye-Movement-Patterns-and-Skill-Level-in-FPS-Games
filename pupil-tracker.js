@@ -4,8 +4,12 @@
     constructor() {
       this.canvas = document.createElement('canvas');
       this.context = this.canvas.getContext('2d', { willReadFrequently: true });
+      this.reset();
     }
-    detect(video, roi, threshold, rotation = 0) {
+    reset() { this.previous = null; this.previousAt = -Infinity; this.key = null; }
+    detect(video, roi, threshold, rotation = 0, { auto = true, track = true } = {}) {
+      const key = JSON.stringify([roi, threshold, rotation, auto, video.videoWidth, video.videoHeight]);
+      if (key !== this.key) { this.reset(); this.key = key; }
       const sourceWidth = video.videoWidth, sourceHeight = video.videoHeight;
       const scale = Math.min(1, 320 / (roi.width * sourceWidth), 320 / (roi.height * sourceHeight));
       const width = Math.max(20, Math.round(roi.width * sourceWidth * scale));
@@ -22,7 +26,11 @@
       this.context.restore();
       const rgba = this.context.getImageData(0, 0, width, height).data, gray = new Uint8Array(width * height);
       for (let i = 0; i < gray.length; i++) gray[i] = Math.round(.299 * rgba[4 * i] + .587 * rgba[4 * i + 1] + .114 * rgba[4 * i + 2]);
-      const result = root.EyePupil.detect(gray, width, height, { threshold });
+      const now = performance.now();
+      if (now - this.previousAt > 250) this.previous = null;
+      const result = auto ? root.EyePupil.detectAdaptive(gray, width, height, { previous: track ? this.previous : null })
+        : root.EyePupil.detect(gray, width, height, { threshold });
+      if (track && result.valid) { this.previous = { cx: result.cx, cy: result.cy, major: result.major }; this.previousAt = now; }
       return { ...result, image_width: width, image_height: height };
     }
   }

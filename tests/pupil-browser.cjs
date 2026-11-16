@@ -62,6 +62,8 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.clock.runFor(5300);
     const snapshot = await page.evaluate(() => trackerBridge.acquire());
     assert.equal(snapshot.engine.id, 'pupil-roi'); assert.equal(snapshot.engine.landmark_pipeline, 'none');
+    assert.equal(snapshot.engine.auto_threshold, true);
+    assert.equal(snapshot.engine.contour_fit, 'deterministic-ransac-conic');
     assert.equal(snapshot.camera_rotation_deg, 180);
     await page.evaluate(() => { const e = document.getElementById('cameraRotation'); e.value = '0'; e.dispatchEvent(new Event('change')); });
     assert.equal(await page.locator('#cameraRotation').inputValue(), '180', 'scripted changes must respect measurement lock');
@@ -72,6 +74,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     await page.evaluate(() => { window.__gaze = { x: .7, y: .3 }; __frames = []; }); await page.clock.runFor(1500);
     const valid = (await page.evaluate(() => __frames)).filter(f => f.valid);
     assert(valid.length > 20); assert(valid.every(f => !f.face_detected && f.pupil_detected && f.tracker_engine === 'pupil-roi'));
+    assert(valid.every(f => Number.isFinite(f.pupil_threshold) && f.pupil_contour_support >= .55));
     assert(valid.at(-1).pupil_u < .5 && valid.at(-1).pupil_v > .5, 'pupil coordinates use the rotated image');
     assert(Math.abs(valid.at(-1).raw_x - 770) < 35); assert(Math.abs(valid.at(-1).raw_y - 270) < 35);
     await page.evaluate(() => { window.__missing = true; __frames = []; }); await page.clock.runFor(300);
@@ -95,6 +98,9 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
     assert(csvRows.every(row => row[columns.indexOf('camera_rotation_deg')] === '180'));
     await page.locator('#eyeRoiBtn').click();
     assert.equal(await page.locator('#eyeRoiApply').isDisabled(), true, 'head-fixed confirmation must be renewed');
+    assert.equal(await page.locator('#pupilThreshold').isDisabled(), true);
+    await page.locator('#pupilAuto').uncheck(); assert.equal(await page.locator('#pupilThreshold').isEnabled(), true);
+    await page.locator('#pupilAuto').check();
     assert.equal(await page.evaluate(() => { try { trackerBridge.prepare(); return false; } catch { return true; } }), true);
     await page.screenshot({ path: path.join(artifacts, 'eye-settings.png') });
     await page.setViewportSize({ width: 390, height: 844 });

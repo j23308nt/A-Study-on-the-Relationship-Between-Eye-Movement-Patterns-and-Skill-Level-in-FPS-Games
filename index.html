@@ -333,7 +333,8 @@
       <div class="validation-heading"><h2>片目の範囲と瞳孔の検出</h2><button id="eyeRoiClose" type="button">閉じる</button></div>
       <p>映像の片目をドラッグで囲んでください。瞳孔が上下左右に動いても範囲内に残るようにします。「映像の向き」で補正した映像を表示します（鏡像ではありません）。</p>
       <canvas id="eyeRoiCanvas" width="640" height="480" aria-label="片目の範囲をドラッグして指定"></canvas>
-      <label>暗さのしきい値 <input id="pupilThreshold" type="range" min="5" max="180" value="50"><output id="pupilThresholdValue">50</output></label>
+      <label><input id="pupilAuto" type="checkbox" checked>明るさに合わせて自動検出・輪郭追跡する</label>
+      <label>手動の暗さのしきい値 <input id="pupilThreshold" type="range" min="5" max="180" value="50" disabled><output id="pupilThresholdValue">自動</output></label>
       <p id="eyeRoiFeedback" aria-live="polite">片目を囲んでください。緑の楕円が瞳孔に合うように調整します。</p>
       <label><input id="eyeHeadFixed" type="checkbox">頭の位置・向きとカメラの取り付けを固定して使います</label>
       <p>範囲がずれた場合は設定と校正をやり直してください。検出できたことは視線位置の正確さを保証しません。</p>
